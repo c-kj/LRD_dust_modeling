@@ -30,6 +30,7 @@ class LRD_IR_ModelBase(ABC):
         self,
         n_0: float,
         gamma: float,
+        *,  # 以下参数必须用关键字指定
         L_UV: float,
         T_sub: float,
         NH_target: float | None,
@@ -99,6 +100,24 @@ class LRD_IR_ModelBase(ABC):
             factor = (r_ratio**(1 - gamma) - 1) / (1 - gamma)
         return self.n_0 * r_in_cgs * factor
     
+    def NH_profile_inverse(self, NH):
+        """Inverse function of NH_profile. For given NH, find r.
+        
+        NH in cgs unit, r in pc.
+        """
+        gamma = self.gamma
+        r_in_cgs = self.r_in * (u.pc.to(u.cm))
+        factor = NH / (self.n_0 * r_in_cgs)
+        #* 如果 gamma > 1，那么 NH 的最大值是 n_0 * r_in_cgs / (gamma-1)。如果 NH 大于这个值，那么 r 无法找到。
+        if gamma > 1 and factor > 1/(gamma-1):
+            raise R_out_Error(f"The {NH = } is larger than possible in this NH_profile with {gamma = }, cannot find r")  # raise error，留给外部处理。
+        
+        if gamma == 1:
+            r_ratio = np.exp(factor)
+        else:
+            r_ratio = (factor * (1-gamma) + 1) ** (1/(1-gamma))
+        return self.r_in * r_ratio
+    
     
     # r_out 的处理：调用 _calc_r_out() 计算并缓存结果。可以手动通过 self.r_out = value 来修改其值。可以通过 del self.r_out 来删除缓存，下次调用时重新计算。
     @property
@@ -120,18 +139,7 @@ class LRD_IR_ModelBase(ABC):
         NH_target = self.NH_target
         if NH_target is None:
             raise ValueError("NH_target is not specified yet!")
-        gamma = self.gamma
-        r_in_cgs = self.r_in * (u.pc.to(u.cm))
-        factor = NH_target / (self.n_0 * r_in_cgs)  #* if NH_target is None, this will raise an error
-        if gamma > 1 and factor > 1/(gamma-1):
-            #! when gamma > 1, the maximum of NH is n_0*r_in_cgs / (gamma-1). If NH_target > this value, r_out cannot be found and will give negative or complex value.
-            raise R_out_Error(f"The {NH_target = } is larger than possible in this NH_profile with {gamma = }, cannot find r_out")
-
-        if gamma == 1:
-            r_out_ratio = np.exp(factor)
-        else:
-            r_out_ratio = (factor * (1-gamma) + 1) ** (1/(1-gamma))
-        r_out = self.r_in * r_out_ratio   
+        r_out = self.NH_profile_inverse(NH_target)
         
         if np.isinf(r_out):        #! 注意，在极端参数下，r_out 可能超过浮点数上界，变为 inf。
             logging.warning("r_out is inf due to float overflow.")
