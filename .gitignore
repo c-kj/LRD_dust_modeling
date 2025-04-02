@@ -1,8 +1,10 @@
-__pycache__/__init__.cpython-312.pyc
-__pycache__/Barvainis_1987.cpython-312.pyc
-__pycache__/incident_SED.cpython-312.pyc
-__pycache__/model_base.cpython-312.pyc
-__pycache__/opacity.cpython-312.pyc
-__pycache__/OrionLRD.cpython-312.pyc
-__pycache__/utils.cpython-312.pyc
 .DS_Store
+__pycache__
+.vscode
+
+speed_test
+paper draft
+
+# 这次提交暂时不添加的目录。下次添加
+notes
+backup
