@@ -23,7 +23,7 @@ def Planck_B_nu(nu, T):
     x = h * nu / (k_B * T)
     return (2 * h / c**2) * nu**3 / (np.exp(x) - 1)
 
-
+#TODO 重新考虑 抽象基类 该怎么写，最好只提供接口。实现放到 mixin？
 class LRD_IR_ModelBase(ABC):
     paras_name = ['n_0', 'gamma', 'L_UV', 'T_sub']
     def __init__(
@@ -34,7 +34,7 @@ class LRD_IR_ModelBase(ABC):
         L_UV: float,
         T_sub: float,
         NH_target: float | None,
-        opacity: OpacityData,
+        opacity: OpacityData,  #TODO 这里似乎不应该要求输入 opacity。L_UV 也应该重新考虑
     ):
         """
         Initialize the model with these parameters. The units are in cgs unless specified otherwise.
@@ -165,7 +165,10 @@ class LRD_IR_ModelBase(ABC):
         return self.T_dust_profile(self.r_out)
 
     method_L_nu = 'trapz_log'  # 默认方法是 'trapz_log'，因为 trapz 要显著快于 quad，而 log scale 收敛性显著更好。
-    def calc_L_nu(self, nu_array: u.Quantity | None = None, r_sample_num:int = 100):
+    def calc_L_nu(self, nu_array: u.Quantity | None = None, 
+                  r_sample_num:int = 100,
+                  return_unit=False,  #TEMP 临时用这个来控制是否给出 unit。回头全面改成使用 unit
+                  ):
         """calc L_nu at given frequency array, using the given opacity data
 
         Parameters
@@ -188,7 +191,7 @@ class LRD_IR_ModelBase(ABC):
         nu_cgs = nu_array.cgs.value
 
         def func(nu, r):
-            return Planck_B_nu(nu, self.T_dust_profile(r)) * self.n_profile(r) * 4*np.pi * r**2
+            return Planck_B_nu(nu, self.T_dust_profile(r)) * self.n_profile(r) * 4*np.pi * r**2  # 这里的 4pi 是 dV = 4 pi r^2 dr 的系数
 
         # * 主要是采样方式 (log / linear) 对积分的收敛性影响较大。积分是用 trapz 还是 trapz_log 影响较小。
         if self.method_L_nu == 'quad':
@@ -206,6 +209,10 @@ class LRD_IR_ModelBase(ABC):
         else:
             raise ValueError(f"method {self.method_L_nu} is invalid! ")
 
-        L_nu *= 4*np.pi * sigma_H   # 最后，乘上积分前面统一的 factor。sigma_H 这个关于 nu 的数组是提到积分外面来的。
+        L_nu *= 4*np.pi * sigma_H   # 最后，乘上积分前面统一的 factor。sigma_H 这个关于 nu 的数组是提到积分外面来的。  # 这里的 4pi 是方位角 Omega
+        
+        if return_unit:
+            L_nu *= u.pc.to(u.cm)**3  # 把 r^2 dr 的积分的单位转换到 cgs
+            L_nu *= u.erg / u.s / u.Hz  # 附加上单位
 
         return L_nu

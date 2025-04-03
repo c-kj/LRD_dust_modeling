@@ -1,8 +1,15 @@
 import numpy as np
 import astropy.units as u
 import astropy.constants as const
+from astropy.units import Quantity
 
 from .utils import LogLogInterpolator
+
+#TODO 目前是一个简陋的实现，可以考虑改为 dataclass，并作为 IncidentSED 的基类？
+class SED:
+    def __init__(self, nu: Quantity, L_nu: Quantity):
+        self.nu = nu
+        self.L_nu = L_nu
 
 #TODO 统一使用带单位的量，不要中途使用不带单位的数字
 class IncidentSED:
@@ -26,4 +33,6 @@ class IncidentSED:
         
         self.L_nu = L_nu / LogLogInterpolator(self.wavelength, L_nu)(1450 * u.AA) * NormalizedFactorAt1450  # 归一化后，L_nu 在 1450 Angstrom 处的值为 NormalizedFactorAt1450
         # 目前 L_nu 是不带单位的纯数值，单位应该是 erg/s/Hz
-        self.L_nu = L_nu / LogLogInterpolator(self.wavelength, L_nu)(1450 * u.AA) * NormalizedFactorAt1450
+        
+        #TEMP 把 L_nu 给带上单位
+        self.L_nu = self.L_nu * u.erg/u.s/u.Hz

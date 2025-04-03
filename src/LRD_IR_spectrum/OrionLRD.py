@@ -14,10 +14,9 @@ from .model_base import LRD_IR_ModelBase
 
 # Orion_opacity = OpacityData('data/Orion_Tdust20_Sigma_23_Thickness_16_Hden_07.opc')
 
-#TODO: 类的名字重新起
+#TODO: 类的名字重新起，加注释解释这个 model 的核心原理
 class SemiOrionLRDModel(LRD_IR_ModelBase):
 
-    tau_ph = 1.0   #TEMP feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
     T_floor = 0.0  # 温度的下限，低于这个温度的区域温度都设为这个值  #TODO 目前设为类的属性，以后可以考虑作为参数设定
     T_accuracy = 1.0      #* 精确到 1 K
     
@@ -30,10 +29,13 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         T_sub: float,
         NH_target: float | None,
         opacity: OpacityData,
+        tau_ph = 1.0   # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
     ):
+        #? 近似：UV 波段的 sigma_H 直接取 opacity 的最大值了，这对吗？
+        self.sigma_H_UV_ext = opacity.sigma_H_ext.max().cgs.value
+        self.sigma_H_UV_abs = opacity.sigma_H_abs.max().cgs.value
+        self.tau_ph = tau_ph
         super().__init__(n_0=n_0, gamma=gamma, L_UV=L_UV, T_sub=T_sub, NH_target=NH_target, opacity=opacity)
-        self.sigma_H_UV_ext = self.opacity.sigma_H_ext.max().cgs.value
-        self.sigma_H_UV_abs = self.opacity.sigma_H_abs.max().cgs.value
 
     def tau_UV_profile(self, r):
         """Optical depth profile"""
@@ -47,6 +49,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
     
     @property
     def r_ph(self):
+        #* 这里用的是 UV band 处的 sigma_H。也就是说，求的是 UV band 处 tau == tau_ph 的 r。
         return self.tau_UV_profile_inverse(self.tau_ph)
 
     def UV_Flux(self, r, tau=None):
@@ -126,11 +129,12 @@ class OrionLRDModel(SemiOrionLRDModel):
         T_sub: float,
         NH_target: float | None,
         opacity: OpacityData,
-        incident_SED: IncidentSED
+        incident_SED: IncidentSED,
+        tau_ph = 1.0,  # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
     ):
         self.incident_SED = incident_SED
         #* 暂时继承 SemiOrionLRDModel 的 __init__ 方法，从而继承其 tau_UV_profile 所需要的 self.sigma_H_UV_ext
-        super().__init__(n_0=n_0, gamma=gamma, L_UV=L_UV, T_sub=T_sub, NH_target=NH_target, opacity=opacity)
+        super().__init__(n_0=n_0, gamma=gamma, L_UV=L_UV, T_sub=T_sub, NH_target=NH_target, opacity=opacity, tau_ph=tau_ph)
         
     def tau_nu_profile(self, nu, r):
         """Optical depth profile"""
@@ -152,7 +156,13 @@ class OrionLRDModel(SemiOrionLRDModel):
         if tau is None:
             tau = self.tau_nu_profile(nu_array, r_arr)
             
-        return trapz_log(incident_SED.L_nu * sigma_H * np.exp(-tau), nu_array.cgs.value) / (4*np.pi * (r * u.pc.to(u.cm))**2)
+        #TEMP 目前临时处理单位的转换。由于 spectral 等效，这里必须谨慎。
+        integral = trapz_log(incident_SED.L_nu.to(u.erg/u.s/u.Hz).value * sigma_H * np.exp(-tau), nu_array.cgs.value)
+        # print(f"{integral=}")
+        #TEMP 之前没考虑到 nu 的升降序，临时补丁
+        if np.all(integral < 0):
+            integral = -integral
+        return integral / (4*np.pi * (r * u.pc.to(u.cm))**2)
     
     @override
     def _calc_r_in(self):
@@ -161,5 +171,20 @@ class OrionLRDModel(SemiOrionLRDModel):
         incident_SED = self.incident_SED
         nu_array = incident_SED.nu
         sigma_H = self.opacity.interp_abs(nu_array).cgs.value
-
-        return np.sqrt(trapz_log(incident_SED.L_nu * sigma_H, nu_array.cgs.value) / (4 * np.pi * IR_Flux)) * u.cm.to(u.pc)
+        
+        #TEMP 目前临时处理单位的转换。由于 spectral 等效，这里必须谨慎。
+        integral = trapz_log(incident_SED.L_nu.to(u.erg/u.s/u.Hz).value * sigma_H, nu_array.cgs.value)
+        # print(f"IR_Flux: {IR_Flux}, sigma_H: {sigma_H}, nu_array: {nu_array}, incident_SED.L_nu: {incident_SED.L_nu}, {integral=}")
+        
+        #TEMP 之前没考虑到 nu 的升降序，临时补丁
+        if integral < 0:
+            integral = -integral
+        
+        return np.sqrt(integral / (4 * np.pi * IR_Flux)) * u.cm.to(u.pc)
+    
+    @override
+    def _repr_latex_(self):
+        return rf"""{self.__class__.__name__}($n_0=${self.n_0:.2e}, $\gamma=${self.gamma}, 
+    $T_{{\rm sub}}=${self.T_sub}, 
+    $r_{{\rm in}}=${self.r_in:.2e}, $r_{{\rm out}}=${self.r_out:.2e}, $T_{{\rm out}}=${self.T_out:.1f})
+    """
