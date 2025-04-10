@@ -171,7 +171,6 @@ class LRD_IR_ModelBase(ABC):
         self,
         nu_array: Quantity['frequency'] | None = None,
         r_sample_num: int = 100,
-        return_unit: bool = False,
     ) -> Quantity[u.erg / u.s / u.Hz]:
         """calc L_nu at given frequency array, using the given opacity data
 
@@ -217,3 +216,16 @@ class LRD_IR_ModelBase(ABC):
         L_nu *= 4 * np.pi * sigma_H   # 最后，乘上积分前面统一的 factor。sigma_H 这个关于 nu 的数组是提到积分外面来的。这里的 4pi 是出射立体角 Omega
 
         return L_nu
+    
+    @u.quantity_input
+    def calc_nu_L_nu(
+        self,
+        nu_array: Quantity['frequency'] | None = None,
+        r_sample_num: int = 100,
+    ) -> Quantity[u.erg / u.s]:
+        if nu_array is None:  # if nu_array is not given, use the nu array in opacity
+            nu_array = self.opacity.nu
+        else:
+            nu_array = nu_array.to(u.Hz, copy=False)
+        
+        return self.calc_L_nu(nu_array, r_sample_num) * nu_array
