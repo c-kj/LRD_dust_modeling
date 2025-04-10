@@ -51,6 +51,7 @@ class ScaledInterpolator:
         self.y = y
         self.f_x, self.inv_f_x = scale_x
         self.f_y, self.inv_f_y = scale_y
+        self.kwargs = kwargs
         
         x_value, self.x_unit = get_value_unit(x)
         y_value, self.y_unit = get_value_unit(y)
@@ -83,7 +84,7 @@ class ScaledInterpolator:
     @property
     def inverse(self):
         """Return a new interpolator with the x and y swapped. The scale_x and scale_y are also swapped."""
-        return __class__(self.y, self.x, scale_x=(self.f_y, self.inv_f_y), scale_y=(self.f_x, self.inv_f_x))
+        return __class__(self.y, self.x, scale_x=(self.f_y, self.inv_f_y), scale_y=(self.f_x, self.inv_f_x), **self.kwargs)
 
 
 class LogLogInterpolator(ScaledInterpolator):

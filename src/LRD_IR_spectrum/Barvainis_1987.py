@@ -16,12 +16,16 @@ class B87Model(LRD_IR_ModelBase):
     """Barvainis 1987 paper 中的模型  
     假设 & 近似：见文档
     """
+    
+    # 类属性
     sigma_H_UV_ext: Quantity[u.cm**2] = 6.82e-23 * u.cm**2  #TEMP, from Orion sigma_H_ext maximum value，because the maximum is ~ 1 Ry = 13.6 eV, in UV range。用于计算 tau
     sigma_H_UV_abs: Quantity[u.cm**2] = 5.44e-23 * u.cm**2  # 来自 Orion 的 sigma_H_abs 最大值，因为最大值约为 1 Ry = 13.6 eV，处于 UV 能量范围内。用于计算 IR Flux
-    beta = 1.6 #TEMP
+    sigma_geometric = sigma_H_UV_abs  # 几何截面 π a^2。 sigma_nu = π a^2 * Q_nu。 根据 B87 中的近似，UV 波段的 Q_nu = 1，即吸收截面近似为几何截面。
+    
+    # 来自 B87 文章的参数。注意如果更改 beta，q_ir 也要相应更改。
+    beta = 1.6  # IR 波段 Q_nu 对 nu 的幂指数。
     q_ir = 1.4e-24  # 来自 B87 paper。是无量纲数，相当于 nu = 1 Hz 对应的 Q_nu （虽然这个 power-law 并不延伸到那么远）
     
-    sigma_geometric = sigma_H_UV_abs  # 几何截面 π a^2。 sigma_nu = π a^2 * Q_nu。 根据 B87 中的近似，UV 波段的 Q_nu = 1，即吸收截面近似为几何截面。
     
     def Q_nu_abs(self, nu: Quantity['frequency']) -> np.ndarray:
         """B87 文章中 Q_nu 的近似公式：Q_nu = q_ir * nu_cgs**beta"""
