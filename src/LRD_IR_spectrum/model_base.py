@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from functools import partial
 import logging
 
 import numpy as np
@@ -7,7 +8,7 @@ import astropy.units as u
 import astropy.constants as const
 from astropy.units import Quantity
 
-from .utils import trapz_log, quad_vec_log, quad_vec_unit
+from .utils import trapz_log, quad_vec_log, quad_vec_unit, quantity_to_latex
 from .opacity import OpacityData
 
 class R_out_Error(Exception):
@@ -57,14 +58,18 @@ class LRD_IR_ModelBase(ABC):
         """提取这个模型所有必要的参数。可用于生成新的模型、做 Hash 等。子类可以覆写类属性 paras_name。"""
         return {self.__dict__[name] for name in self.paras_name}
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}(n_0={self.n_0}, gamma={self.gamma}, L_UV={self.L_UV}, T_sub={self.T_sub}, r_in={self.r_in})"
+    # 目前暂时废弃 __repr__，避免维护成本。反正 Jupyter notebook 里显示用的也是 latex 格式
+    # def __repr__(self):
+    #     return f"{self.__class__.__name__}(n_0={self.n_0}, gamma={self.gamma}, L_UV={self.L_UV}, T_sub={self.T_sub}, r_in={self.r_in})"
 
     def _repr_latex_(self):
-        return rf"""{self.__class__.__name__}($n_0=${self.n_0:.2e}, $\gamma=${self.gamma}, 
-    $L_{{\rm UV}}=${self.L_UV:.2e}, $T_{{\rm sub}}=${self.T_sub}, 
-    $r_{{\rm in}}=${self.r_in:.2e}, $r_{{\rm out}}=${self.r_out:.2e}, $T_{{\rm out}}=${self.T_out:.1f})
-    """
+        """在 Jupyter Notebook 的单元输出中渲染时所调用的方法"""
+        fmt = partial(quantity_to_latex, p=4)
+        
+        return rf"""{self.__class__.__name__}($n_0=$ {fmt(self.n_0)} , $\gamma={self.gamma}$, 
+        $L_{{\rm UV}}=$ {fmt(self.L_UV)} , $T_{{\rm sub}}=$ {fmt(self.T_sub)}, 
+        $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm out}}=$ {fmt(self.r_out)} , $T_{{\rm out}}=$ {fmt(self.T_out)})
+        """
 
     def __format__(self, format_spec: str) -> str:
         """usage: ` f"{model:latex}" `

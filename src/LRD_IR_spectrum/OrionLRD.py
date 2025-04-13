@@ -1,3 +1,4 @@
+from functools import partial
 from typing import override
 
 import numpy as np
@@ -7,7 +8,7 @@ from astropy.units import Quantity
 
 from .model_base import Planck_B_nu
 
-from .utils import LogLogInterpolator, trapz_log, quad_vec_log, quad_vec_unit
+from .utils import LogLogInterpolator, trapz_log, quad_vec_log, quad_vec_unit, quantity_to_latex
 from .opacity import OpacityData
 from .incident_SED import IncidentSED
 from .model_base import LRD_IR_ModelBase
@@ -87,7 +88,8 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         elif method == 'trapz':
             flux = integrate.trapezoid(integrand(nu_array[:, None], T), nu_array, axis=0)
         elif method == 'trapz_log':
-            flux = trapz_log(integrand(nu_array[:, None], T), nu_array[:, None], axis=0)  #* 由于 trapz_log 中有 f(x) * x，所以 nu_array 也要变成二维才能 broadcast
+            integrand_array = integrand(nu_array[:, None], T)
+            flux = trapz_log(integrand_array, nu_array[:, None], axis=0)  #* 由于 trapz_log 中有 f(x) * x，所以 nu_array 也要变成二维才能 broadcast
         else: 
             raise ValueError(f"method {method} is invalid! ")
 
@@ -121,6 +123,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
     def T_dust_profile(self, r: Quantity['length']) -> Quantity[u.K]:
         T_array = np.linspace(1*u.K, self.T_sub, int((self.T_sub - 1*u.K) / self.T_accuracy) + 1)
         T_array_low = np.geomspace(1e-10 * u.K, 1 * u.K, 10, endpoint=False)  # 在 < 1 K 的范围，用 log 尺度取几个点，从而避免直接把下界取 0 导致 log 插值错误的问题，也避免这里在 log scale 下间隔过大。
+        #FUTURE 这里的低温下界似乎太低了，造成 IR_Flux 非常小，出现 log(0)，不是很有必要。考虑改大一点
         T_array = np.concatenate([T_array_low, T_array]) 
         
         IR_Flux_array = self.IR_Flux(T_array)
@@ -167,10 +170,7 @@ class OrionLRDModel(SemiOrionLRDModel):
         tau 要么是一个 scalar，要么是一个二维数组，其形状 = (len(nu_array), len(r))
         """
         #TODO 整理，写注释
-        
-        if r.ndim == 0: # 如果 r 是标量，转化为一维数组
-            r = r[None]
-        r_arr = r[:, None]  # 把 r 「竖起来」，变为二维数组
+        r_arr = r[..., None]  # 在 r 的最后一个 axis 上添加一个维度。如果 r 是标量则转化为一维数组，r 是以为数组则转化为二维数组。
         
         incident_SED = self.incident_SED
         nu_array = incident_SED.nu
@@ -205,7 +205,8 @@ class OrionLRDModel(SemiOrionLRDModel):
     
     @override
     def _repr_latex_(self):
-        return rf"""{self.__class__.__name__}($n_0=${self.n_0:.2e}, $\gamma=${self.gamma}, 
-    $T_{{\rm sub}}=${self.T_sub}, 
-    $r_{{\rm in}}=${self.r_in:.2e}, $r_{{\rm out}}=${self.r_out:.2e}, $T_{{\rm out}}=${self.T_out:.1f})
-    """
+        fmt = partial(quantity_to_latex, p=4)
+        return rf"""{self.__class__.__name__}($n_0=$ {fmt(self.n_0)}, $\gamma={self.gamma}$, 
+        $T_{{\rm sub}}=$ {fmt(self.T_sub)}, 
+        $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm out}}=$ {fmt(self.r_out)}, $T_{{\rm out}}=$ {fmt(self.T_out)})
+        """

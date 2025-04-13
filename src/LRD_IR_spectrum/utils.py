@@ -170,3 +170,27 @@ def quad_vec_log(f, a, b, *args, **kwargs):
         x = np.exp(log_x)
         return f(x) * x
     return integrate.quad_vec(integrand, np.log(a), np.log(b), *args, **kwargs)
+
+
+
+# 用于格式的 utils
+
+from astropy.units import Quantity
+from typing import Literal
+
+def quantity_to_latex(quan: Quantity,
+              formatter=None,
+              p=None,
+              *,
+              format: Literal['latex'] | Literal['latex_inline'] | None = 'latex_inline',
+              subfmt=None,
+              unit=None,
+              ) -> str:
+    """便捷地把 Quantity 转换为 LaTeX 字符串  
+    是 Quantity.to_string 的一个包装，在参数的顺序和默认值上做了一些调整
+    
+    p 为 precision 参数的简写
+    format 默认为 'latex_inline'
+    """
+    
+    return quan.to_string(format=format, unit=unit, precision=p, subfmt=subfmt, formatter=formatter)

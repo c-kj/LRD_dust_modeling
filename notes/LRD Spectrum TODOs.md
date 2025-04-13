@@ -29,11 +29,14 @@
     - [x] 改造积分函数？
     - [x] 写一个辅助函数？
   - [x] 关掉全局的 equivalencies ？
-  - [x] **统一把所有的值都尽量使用 `astropy.units`**
+  - [x] 统一把所有的值都尽量使用 `astropy.units`
   - [ ] 用 `u.quantity_input` 装饰器来检查（只检查入口、出口，不检查中间计算的函数，避免太多开销）
   - [x] IR_Flux 中的积分，其他方法还没适配单位
   - [x] brentq 方法求根，看看单位处理好没有
   - [x] OrionLRDModel，还遗留了很多 .cgs.value , .to(...) 之类的
+  - [ ] **测速，看看加单位的开销**
+    - [ ] 对比「把 u.quantity_input 全部注释掉」
+    - [ ] 对比 main 分支上的代码版本
 - [ ] B87 model
   - [x] 做了哪些假设、近似？写进 doc
   - [x] 重新推导：把 IR flux 的量纲弄对
@@ -42,10 +45,11 @@
   - [x] 弄清楚之前的 UV_flux IR_flux 的具体单位，写注释
   - [ ] 梳理继承关系 ？
   - [ ] 去掉一些不必要的继承？
-  - [ ] 重新写 repr 和 latex repr
+  - [x] 重新写 repr 和 latex repr
   - [ ] 把 A_V_model 改造成一个类
     - [ ] 记录 A_V 属性作为实例属性
     - [ ] 把 SED 改造为 dataclass？规范接口
+  - [ ] 解决 warning
 
 
 
