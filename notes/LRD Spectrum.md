@@ -101,3 +101,26 @@ $$
 - 加速：先算一遍 RHS(T) 对 T 的表，存下来。然后对每个 r，根据 LHS(r) 对应查表确定区间
   - 如果表足够细，比如精确到 1K，那么插值就足够了
   - 如果表比较粗，可以再用 brentq 求根，找到更精细的 T
+
+### 关于运算速度
+
+- 根据 line profiler 和 viztracer 的结果，计算 `model.calc_L_nu()` 耗时的大头在计算 T profile 上，当然，这取决于 r 和 nu 各用了多少个 sample 来算。`trapz_log` 的开销并不很大。
+- `@u.quantity_input` 的运行时检查开销似乎并不占大头。替换成一个啥也不干的装饰器，或者全部注释掉，速度几乎无差别。
+- 使用 Unit 计算，相比于以前版本用纯 numpy 计算，略微慢了些（350ms -> 450ms）
+- 可以关掉 numpy 的 warning 来（略微）提速：`np.seterr(all='ignore')` 
+- 对于之前的 fiducial 选择（OrionLRD data, 9244 个 nu）， `r_sample_num=1000` ，单个 `calc_L_nu` 耗时大约 500ms
+
+### 与 2024 paper 中李政融使用的代码比较
+
+- 实现：
+  - 政融自己实现的 `calc_L_nu_photon` 函数。使用的计算方法与我文章中描述的相同，但采用了 magic number 以及 $e^{1/5.6}$ 的近似。
+    - 在短波部分造成一点小的偏差
+  - 在 `calc_L_nu_photon` 函数中，政融手动添加了 normalization，把 $\int L_\nu \mathrm{d}\nu$ 直接归一化到  L_UV （同时也自然从 pc^3 放大到了以 cm^3 为单位）。这其实不太合理，不该用 L_UV。
+  - IncidentSED 中不再使用 bolometric correction？直接在数据文件中算好了吗？
+- 政融采用了 T_floor = 10，而我目前设为 0 。这导致 gamma 接近 1 时多出来很多能量（当然这是非物理的）
+- 数据：
+  - 政融采用了更新的 SED 和 opacity 数据表
+- 单位：
+  - L_nu 的中含有 r^3，r 是以 pc 而非 cm 为单位的。需要手动转换
+  - IncidentSED 的 L_nu 没乘单位
+- 结果：把 T_floor 统一、去掉政融的「归一化」后，结果基本相同
