@@ -88,8 +88,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         elif method == 'trapz':
             flux = integrate.trapezoid(integrand(nu_array[:, None], T), nu_array, axis=0)
         elif method == 'trapz_log':
-            integrand_array = integrand(nu_array[:, None], T)
-            flux = trapz_log(integrand_array, nu_array[:, None], axis=0)  #* 由于 trapz_log 中有 f(x) * x，所以 nu_array 也要变成二维才能 broadcast
+            flux = trapz_log(integrand(nu_array[:, None], T), nu_array[:, None], axis=0)  #* 由于 trapz_log 中有 f(x) * x，所以 nu_array 也要变成二维才能 broadcast
         else: 
             raise ValueError(f"method {method} is invalid! ")
 
@@ -99,16 +98,16 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
             flux = flux.item()  # 把标量 array 变成标量。同时适用于 array(1) 和 array([])
         return flux
 
-    @u.quantity_input
-    def _T_dust_eqn(self, r: Quantity['length'], T: Quantity['temperature'], **kwargs) -> Quantity[u.erg / u.s]:
-        return self.UV_Flux(r) - self.IR_Flux(T, **kwargs)
-
 
     @u.quantity_input
     def _calc_r_in(self) -> Quantity[u.pc]:
         IR_Flux = self.IR_Flux(self.T_sub)
         return np.sqrt(self.L_UV * self.sigma_H_UV_abs / (4 * np.pi * IR_Flux))
     
+
+    @u.quantity_input
+    def _T_dust_eqn(self, r: Quantity['length'], T: Quantity['temperature'], **kwargs) -> Quantity[u.erg / u.s]:
+        return self.UV_Flux(r) - self.IR_Flux(T, **kwargs)
 
     @u.quantity_input
     def T_dust_profile_brentq(self, r: Quantity['length']) -> Quantity[u.K]:
