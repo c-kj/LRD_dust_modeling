@@ -40,8 +40,8 @@
     - [x] 对比 main 分支上的代码版本
   - [x] **把 A_V 也用 mag 作为单位？**
     - [ ] `_repr_latex_` 方便吗？
-    - [x] `u.mag` 作为单位怎么处理？
-  - [ ] **给「入口」函数加 equivalencies 自动转换**
+    - [x] `u.mag` 作为单位怎么处理？
+  - [x] 给「入口」函数加 equivalencies 自动转换
 - [ ] B87 model
   - [x] 做了哪些假设、近似？写进 doc
   - [x] 重新推导：把 IR flux 的量纲弄对
@@ -51,7 +51,7 @@
   - [ ] 梳理继承关系 ？
   - [ ] 去掉一些不必要的继承？
   - [x] 重新写 repr 和 latex repr
-  - [ ] 把 A_V_model 改造成一个类
+  - [ ] **把 A_V_model 改造成一个类**
     - [ ] 记录 A_V 属性作为实例属性
   - [ ] 把 SED 改造为 dataclass？规范接口
   - [ ] *解决 warning*

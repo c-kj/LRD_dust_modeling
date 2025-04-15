@@ -171,7 +171,7 @@ class LRD_IR_ModelBase(ABC):
         return self.T_dust_profile(self.r_out)
 
     method_L_nu = 'trapz_log'  # 默认方法是 'trapz_log'，因为 trapz 要显著快于 quad，而 log scale 收敛性显著更好。
-    @u.quantity_input
+    @u.quantity_input(equivalencies=u.spectral())  # 兼容各种可以在 u.spectral() 等效下转换为频率的物理量
     def calc_L_nu(
         self,
         nu_array: Quantity['frequency'] | None = None,
@@ -183,7 +183,7 @@ class LRD_IR_ModelBase(ABC):
         ----------
         nu_array : Quantity['frequency'] | None, optional
             If not specified (default = None), will use opacity.nu.
-            可以是任何可以转换为频率的数组，比如波长数组，但是要通过 equivalencies 转换为频率单位。
+            可以是任何可以在 u.spectral() 等效下转换为频率的数组，比如波长数组。
 
         Returns
         -------
@@ -222,12 +222,15 @@ class LRD_IR_ModelBase(ABC):
 
         return L_nu
     
-    @u.quantity_input
+    @u.quantity_input(equivalencies=u.spectral())   # 兼容各种可以在 u.spectral() 等效下转换为频率的物理量
     def calc_nu_L_nu(
         self,
         nu_array: Quantity['frequency'] | None = None,
         r_sample_num: int = 100,
     ) -> Quantity[u.erg / u.s]:
+        """与 calc_L_nu 类似，但计算的是 nu * L_nu  
+        参见 calc_L_nu 的文档
+        """
         if nu_array is None:  # if nu_array is not given, use the nu array in opacity
             nu_array = self.opacity.nu
         else:
