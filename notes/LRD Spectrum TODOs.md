@@ -38,7 +38,10 @@
   - [x] 测速，看看加单位的开销
     - [x] 对比「把 u.quantity_input 全部注释掉」
     - [x] 对比 main 分支上的代码版本
-  - [ ] **把 A_V 也用 mag 作为单位**
+  - [x] **把 A_V 也用 mag 作为单位？**
+    - [ ] `_repr_latex_` 方便吗？
+    - [x] `u.mag` 作为单位怎么处理？
+  - [ ] **给「入口」函数加 equivalencies 自动转换**
 - [ ] B87 model
   - [x] 做了哪些假设、近似？写进 doc
   - [x] 重新推导：把 IR flux 的量纲弄对
@@ -50,8 +53,11 @@
   - [x] 重新写 repr 和 latex repr
   - [ ] 把 A_V_model 改造成一个类
     - [ ] 记录 A_V 属性作为实例属性
-    - [ ] 把 SED 改造为 dataclass？规范接口
-  - [ ] **解决 warning**
+  - [ ] 把 SED 改造为 dataclass？规范接口
+  - [ ] *解决 warning*
+  - [ ] 改名
+    - [ ] 给 UV_Flux 和 IR_Flux 改名
+    - [ ] 给 OrionLRDModel 改名
 
 
 
@@ -66,7 +72,4 @@
   - [ ] 光学厚的 thin layer，能否用单温度处理？
   - [ ] thin layer 模型是否有收敛？
 - [ ] **写一个最朴素的 single layer model**
-
-
-
-- [ ] 
+- [ ] 潜在的问题：目前各种函数（n_profile, UV_Flux 等）都没有限定 r_in < r < r_out

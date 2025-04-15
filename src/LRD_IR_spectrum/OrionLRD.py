@@ -121,6 +121,8 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
 
     @u.quantity_input
     def T_dust_profile(self, r: Quantity['length']) -> Quantity[u.K]:
+        
+        # 准备一个从 IR_flux 到 T 的插值表，从而加速计算
         T_array = np.linspace(1*u.K, self.T_sub, int((self.T_sub - 1*u.K) / self.T_accuracy) + 1)
         T_array_low = np.geomspace(1e-10 * u.K, 1 * u.K, 10, endpoint=False)  # 在 < 1 K 的范围，用 log 尺度取几个点，从而避免直接把下界取 0 导致 log 插值错误的问题，也避免这里在 log scale 下间隔过大。
         #FUTURE 这里的低温下界似乎太低了，造成 IR_Flux 非常小，出现 log(0)，不是很有必要。考虑改大一点
@@ -128,14 +130,14 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         
         IR_Flux_array = self.IR_Flux(T_array)
         interp = LogLogInterpolator(IR_Flux_array, T_array, bounds_error=False, fill_value='extrapolate')  #* 在越界时不报错，而是外插。由于数值误差，UV_Flux(r_in) 可能会轻微地超出 IR_Flux(T_sub)。这样可以避免报错。
-        #FUTURE 上面的 interp 其实不用每次重新算。还能提速。
+        
         UV_Flux = self.UV_Flux(r)  # 形状与 r 相同，可能是标量，也可能是数组。
         #* 处理 feedback 造成的效应：等效地，我们按照原来的 dust 密度、温度分布，只是在计算 r_ph 以内的 UV Flux 时，将其设为 r_ph 处的 UV Flux 值，并设 tau=0，因为 r_ph 以内不再有 dust 遮蔽。这样，这部分 dust 的辐射谱贡献就等效于 r_ph 处的 thin shell 了。
         # 取 r < r_ph 而非 <= ，这样在严格的 r = r_ph 处（thin shell 的外沿）相当于仍有 tau = 1，从而更贴近真实情况。
         UV_Flux = np.where(r < self.r_ph, self.UV_Flux(self.r_ph, tau=0), UV_Flux)   # tau = 0 是上界。若令 tau = 1 则为下界。
         
-        ret = np.where(UV_Flux == 0, 0.0, interp(UV_Flux))  # 如果 IR_Flux 为 0，那么 T = 0，而非使用插值，因为插值可能给出 nan.
-        return np.maximum(ret, self.T_floor)  # 低于 T_floor 的温度都设为 T_floor
+        T_dust = np.where(UV_Flux == 0, 0.0, interp(UV_Flux))  # 如果 IR_Flux 为 0，那么 T = 0，而非使用插值，因为插值可能给出 nan.
+        return np.maximum(T_dust, self.T_floor)  # 低于 T_floor 的温度都设为 T_floor
     
     
 class OrionLRDModel(SemiOrionLRDModel):
