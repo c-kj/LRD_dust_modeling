@@ -18,7 +18,7 @@
   - [x] 更改文件层级
   - [x] 创建 github repo，与政融分享
   - [x] 把 project notes 和 TODOs 上传
-- [ ] **单位 Units**
+- [x] 单位 Units
   - [x] 学习 astropy 的 units 文档
     - [x] 对数单位怎么用？
     - [x] equivalencies 怎么用？spectral_density 和 spectral 的区别？
@@ -38,8 +38,8 @@
   - [x] 测速，看看加单位的开销
     - [x] 对比「把 u.quantity_input 全部注释掉」
     - [x] 对比 main 分支上的代码版本
-  - [x] **把 A_V 也用 mag 作为单位？**
-    - [ ] `_repr_latex_` 方便吗？
+  - [x] 把 A_V 也用 mag 作为单位？
+    - [x] `_repr_latex_` 方便吗？只需 `.to(u.mag)` 即可
     - [x] `u.mag` 作为单位怎么处理？
   - [x] 给「入口」函数加 equivalencies 自动转换
 - [ ] B87 model
@@ -51,9 +51,9 @@
   - [ ] 梳理继承关系 ？
   - [ ] 去掉一些不必要的继承？
   - [x] 重新写 repr 和 latex repr
-  - [ ] **把 A_V_model 改造成一个类**
-    - [ ] 记录 A_V 属性作为实例属性
-  - [ ] 把 SED 改造为 dataclass？规范接口
+  - [x] 把 A_V_model 改造成一个类
+    - [x] 记录 A_V 属性作为实例属性
+  - [ ] **把 SED 改造为 dataclass？规范接口**
   - [ ] *解决 warning*
   - [ ] 改名
     - [ ] 给 UV_Flux 和 IR_Flux 改名

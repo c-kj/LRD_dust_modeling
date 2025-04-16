@@ -207,7 +207,8 @@ class OrionLRDModel(SemiOrionLRDModel):
     @override
     def _repr_latex_(self):
         fmt = partial(quantity_to_latex, p=4)
-        return rf"""{self.__class__.__name__}($n_0=$ {fmt(self.n_0)}, $\gamma={self.gamma}$, 
-        $T_{{\rm sub}}=$ {fmt(self.T_sub)}, 
-        $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm out}}=$ {fmt(self.r_out)}, $T_{{\rm out}}=$ {fmt(self.T_out)})
+        return rf"""{self.__class__.__name__}( $n_0=$ {fmt(self.n_0)}, $\gamma={self.gamma}$, 
+        $N_{{\rm H}}=$ {fmt(self.NH_target)}, $\tau_{{\rm ph}}={self.tau_ph}$, 
+        $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm ph}}=$ {fmt(self.r_ph)}, $r_{{\rm out}}=$ {fmt(self.r_out)}, 
+        $T_{{\rm sub}}=$ {fmt(self.T_sub)}, $T_{{\rm out}}=$ {fmt(self.T_out)} )
         """

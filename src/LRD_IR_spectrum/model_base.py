@@ -66,9 +66,10 @@ class LRD_IR_ModelBase(ABC):
         """在 Jupyter Notebook 的单元输出中渲染时所调用的方法"""
         fmt = partial(quantity_to_latex, p=4)
         
-        return rf"""{self.__class__.__name__}($n_0=$ {fmt(self.n_0)} , $\gamma={self.gamma}$, 
-        $L_{{\rm UV}}=$ {fmt(self.L_UV)} , $T_{{\rm sub}}=$ {fmt(self.T_sub)}, 
-        $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm out}}=$ {fmt(self.r_out)} , $T_{{\rm out}}=$ {fmt(self.T_out)})
+        return rf"""{self.__class__.__name__}( $n_0=$ {fmt(self.n_0)}, $\gamma={self.gamma}$, 
+        $L_{{\rm UV}}=$ {fmt(self.L_UV)}, $N_{{\rm H}}=$ {fmt(self.NH_target)}, 
+        $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm out}}=$ {fmt(self.r_out)} , 
+        $T_{{\rm sub}}=$ {fmt(self.T_sub)}, $T_{{\rm out}}=$ {fmt(self.T_out)} )
         """
 
     def __format__(self, format_spec: str) -> str:

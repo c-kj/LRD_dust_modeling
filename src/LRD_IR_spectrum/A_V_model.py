@@ -1,3 +1,6 @@
+from functools import partial
+from typing import override
+
 import numpy as np
 import astropy.units as u
 from astropy.units import Quantity, Magnitude
@@ -5,8 +8,9 @@ from astropy.units import Quantity, Magnitude
 from .opacity import OpacityData
 from .incident_SED import SED
 from .OrionLRD import OrionLRDModel
+from .utils import quantity_to_latex
 
-MagnitudeType = float | int | Quantity[u.mag] | Magnitude
+MagnitudeType = Quantity[u.mag] | Quantity['']  # 可以是纯数字、xxx * u.mag、xxx * u.mag()
 
 
 def get_value_in_mag(A: MagnitudeType) -> float:
@@ -57,30 +61,46 @@ def N_H_from_A_V(A_V: MagnitudeType, opacity: OpacityData) -> Quantity[u.cm**-2]
     return tau_V / sigma_H_ext_V
 
 #TODO 改造为一个类，继承 OrionLRDModel
-@u.quantity_input
-def A_V_model(
-    n_0: Quantity['number density'],
-    gamma: float,
-    *,  # 以下参数必须用关键字指定
-    T_sub: Quantity['temperature'],
-    A_V: MagnitudeType,
-    opacity: OpacityData,
-    observed_SED: SED,  #* 这里必须输入的是 rest frame 的 nu 和 L_nu！ #TODO 强调这里必须是 rest frame
-    tau_ph = 1, # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
-    ) -> OrionLRDModel:
+
+class A_V_Model(OrionLRDModel):
     
-    A_V = to_magnitude(A_V)  # 把 A_V 统一为 Magnitude 表示
-    
-    NH_target = N_H_from_A_V(A_V, opacity=opacity)
-    
-    with u.set_enabled_equivalencies(u.spectral()):
-        sigma_H_V = opacity.interp_ext(5470 * u.AA)
-    
-    A_lambda: Magnitude = A_V * (opacity.interp_ext(observed_SED.nu) / sigma_H_V)
-    de_reddened_L_nu = observed_SED.L_nu / A_lambda.physical  # .physical 把 A_lambda 转化为消光的比率
-    
-    de_reddened_SED = SED(nu=observed_SED.nu, 
-                          L_nu=de_reddened_L_nu)
-    
-    model = OrionLRDModel(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, incident_SED=de_reddened_SED, tau_ph=tau_ph)
-    return model
+    @u.quantity_input
+    def __init__(self,
+        n_0: Quantity['number density'],
+        gamma: float,
+        *,  # 以下参数必须用关键字指定
+        T_sub: Quantity['temperature'],
+        A_V: MagnitudeType,
+        opacity: OpacityData,
+        observed_SED: SED,  #* 这里必须输入的是 rest frame 的 nu 和 L_nu！ #TODO 强调这里必须是 rest frame
+        tau_ph = 1, # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
+        ):
+        
+        A_V = to_magnitude(A_V)  # 把 A_V 统一为 Magnitude 表示
+        
+        # 计算各种参数
+        NH_target = N_H_from_A_V(A_V, opacity=opacity)
+        
+        with u.set_enabled_equivalencies(u.spectral()):
+            sigma_H_V = opacity.interp_ext(5470 * u.AA)
+        
+        A_lambda: Magnitude = A_V * (opacity.interp_ext(observed_SED.nu) / sigma_H_V)  # A_lambda 是对应于 observed_SED.nu 的各个波长的消光值数组。# 可以考虑改名为 A_nu
+        de_reddened_L_nu = observed_SED.L_nu / A_lambda.physical  # .physical 把 A_lambda 转化为消光的比率
+
+        de_reddened_SED = SED(nu=observed_SED.nu, L_nu=de_reddened_L_nu)
+        
+        # 记录参数
+        self.A_V = A_V
+        self.observed_SED = observed_SED
+        
+        # 调用父类的 __init__ 
+        super().__init__(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, incident_SED=de_reddened_SED, tau_ph=tau_ph)
+        
+    @override
+    def _repr_latex_(self):
+        fmt = partial(quantity_to_latex, p=4)
+        return rf"""{self.__class__.__name__}( $n_0=$ {fmt(self.n_0)}, $\gamma={self.gamma}$, 
+        $A_V=$ {fmt(self.A_V.to(u.mag))}, $N_{{\rm H}}=$ {fmt(self.NH_target)}, $\tau_{{\rm ph}}={self.tau_ph}$, 
+        $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm ph}}=$ {fmt(self.r_ph)}, $r_{{\rm out}}=$ {fmt(self.r_out)}, 
+        $T_{{\rm sub}}=$ {fmt(self.T_sub)}, $T_{{\rm out}}=$ {fmt(self.T_out)} )
+        """
