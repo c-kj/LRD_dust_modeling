@@ -8,7 +8,22 @@
 - [ ] 画出  $n_0, \gamma$ 参数空间图上的图
 - [ ] 记录周二和 Kohei 聊的内容，关于项目的目标、讨论部分
 
+## 待解决的问题
 
+- [ ] **Feedback 的正确处理**
+
+  - [ ] 尤其是在 A_V 小的时候（tau_UV < 1，不存在 tau_UV = 1 的点）
+
+  - [ ] 总光深 < 1 怎么处理？
+  - [ ] 光学厚的 thin layer，能否用单温度处理？
+  - [ ] thin layer 模型是否有收敛？
+  - [ ] **tau_UV 怎么取？**
+    - [ ] 之前是取 截面最大值。这对于更广泛的 opacity law 并不合适。
+    - [ ] 取 rad pressure cross 对 incident L_nu 平均的值作为截面，然后拿这个截面算 tau_UV
+
+- [ ] **换不同的 opacity law**
+
+- [ ] 把 Far UV 的能量加进模型 （政融 working on it）
 
 ## Coding
 
@@ -53,7 +68,7 @@
   - [x] 重新写 repr 和 latex repr
   - [x] 把 A_V_model 改造成一个类
     - [x] 记录 A_V 属性作为实例属性
-  - [ ] **把 SED 改造为 dataclass？规范接口**
+  - [x] 把 SED 改造为 dataclass？规范接口
   - [ ] *解决 warning*
   - [ ] 改名
     - [ ] 给 UV_Flux 和 IR_Flux 改名
@@ -67,9 +82,5 @@
 - [ ] **为什么我跑了一下，和政融的 T_out 不一致？**
 - [ ] **能量守恒问题**
   - [ ] 把 A_V 对应吸收的总能量、IR 发射的总能量都算出来，作为参考
-- [ ] **feedback 的处理**
-  - [ ] 总光深 < 1 怎么处理？
-  - [ ] 光学厚的 thin layer，能否用单温度处理？
-  - [ ] thin layer 模型是否有收敛？
-- [ ] **写一个最朴素的 single layer model**
+- [ ] **写一个最朴素的 single layer model，用于对比**
 - [ ] 潜在的问题：目前各种函数（n_profile, UV_Flux 等）都没有限定 r_in < r < r_out

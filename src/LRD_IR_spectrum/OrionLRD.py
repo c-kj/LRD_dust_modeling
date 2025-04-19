@@ -10,7 +10,7 @@ from .model_base import Planck_B_nu
 
 from .utils import LogLogInterpolator, trapz_log, quad_vec_log, quad_vec_unit, quantity_to_latex
 from .opacity import OpacityData
-from .incident_SED import IncidentSED
+from .incident_SED import SED
 from .model_base import LRD_IR_ModelBase
 
 
@@ -151,7 +151,7 @@ class OrionLRDModel(SemiOrionLRDModel):
         T_sub: Quantity['temperature'],
         NH_target: Quantity['column density'] | None,
         opacity: OpacityData,
-        incident_SED: IncidentSED,
+        incident_SED: SED,
         tau_ph: float = 1.0,  # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
     ):
         self.incident_SED = incident_SED
