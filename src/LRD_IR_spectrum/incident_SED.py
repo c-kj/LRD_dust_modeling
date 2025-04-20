@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Self
 from warnings import warn
 
@@ -42,7 +43,7 @@ class SED:
     
     #TODO 把 bolometric correction 作为可选项，参数可以传入
     @classmethod
-    def from_file(cls, filename: str) -> Self:
+    def from_file(cls, filename: str | Path) -> Self:
         """从文件中读取 SED 数据。  
         文件格式要求为：第一列为 wavelength (Angstrom)，第二列为 L_lambda (erg/s/Angstrom)。
         
