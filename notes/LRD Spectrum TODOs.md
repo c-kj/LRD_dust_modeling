@@ -25,8 +25,9 @@
 
   - [x] 加入从政融那里拿到的 .opc 数据。但是波长覆盖范围都太小了，用不了。
   - [ ] 研究 sigma_H_V 的处理
-    - [ ] 确认 $n_0 \sigma_{H,V}$ 的简并性
+    - [x] 确认 $n_0 \sigma_{H,V}$ 的简并性
     - [ ] 如何处理？能直接给一个差不多的 sigma_H_V 值吗？但这样 n_0 能互相比较吗？
+      - [ ] 最好是直接拿到物理模型给出的 $\sigma_H$ 数据，比如从 CLOUDY 中
     - [ ] $\sigma_H$ 是一个合适的量吗？它是各种大小的颗粒的综合效应吗？
   - [ ] 找到波长覆盖范围合适的几个典型模型
   - [ ] 与政融给我的模型比较。尤其注意 FUV、UV、Optical、IR 多波段的比较
@@ -82,10 +83,10 @@
   - [ ] 改名
     - [ ] 给 UV_Flux 和 IR_Flux 改名
     - [ ] 给 OrionLRDModel 改名
-- [ ] **OpacityData**
-  - [ ] 允许 sigma_abs 空着，默认取 ext 的值
-  - [ ] 处理 sigma_H_V 的指定
-  - [ ] 从 A / A_V 曲线转换为 opacity law：`from_extinction_data`、`from_extinction_model`
+- [x] OpacityData
+  - [x] 允许 sigma_abs 空着，默认取 ext 的值
+  - [x] 处理 sigma_H_V 的指定
+  - [x] 从 A / A_V 曲线转换为 opacity law：`from_extinction_data`、`from_extinction_model`
 
 
 
@@ -108,3 +109,5 @@
 - [ ] opacity law 的文件格式
   - [ ] 如果没有区分 ext 和 abs ，可以不用写两列？写也行。
 - [ ] 如果有函数形式，可以直接给我，不用写成文件
+- [ ] 找政融问问 CLOUDY 能不能给几条 sigma_H 的数据
+  - [ ] 如果能给的话，还得区分 ext vs abs，反而还有点麻烦…

@@ -81,10 +81,7 @@ class A_V_Model(OrionLRDModel):
         # 计算各种参数
         NH_target = N_H_from_A_V(A_V, opacity=opacity)
         
-        with u.set_enabled_equivalencies(u.spectral()):
-            sigma_H_V = opacity.interp_ext(5470 * u.AA)
-        
-        A_lambda: Magnitude = A_V * (opacity.interp_ext(observed_SED.nu) / sigma_H_V)  # A_lambda 是对应于 observed_SED.nu 的各个波长的消光值数组。# 可以考虑改名为 A_nu
+        A_lambda: Magnitude = A_V * (opacity.interp_ext(observed_SED.nu) / opacity.sigma_H_ext_V)  # A_lambda 是对应于 observed_SED.nu 的各个波长的消光值数组。# 可以考虑改名为 A_nu
         de_reddened_L_nu = observed_SED.L_nu / A_lambda.physical  # .physical 把 A_lambda 转化为消光的比率
 
         de_reddened_SED = SED(nu=observed_SED.nu, L_nu=de_reddened_L_nu)
