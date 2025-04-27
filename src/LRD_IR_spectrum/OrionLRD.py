@@ -182,9 +182,6 @@ class OrionLRDModel(SemiOrionLRDModel):
             
         integral = trapz_log(incident_SED.L_nu * sigma_H * np.exp(-tau), nu_array)
         
-        #TEMP 之前没考虑到 nu 的升降序，临时补丁
-        if np.all(integral < 0):
-            integral = -integral
         return integral / (4*np.pi * r**2)
     
     @override
@@ -197,10 +194,6 @@ class OrionLRDModel(SemiOrionLRDModel):
         sigma_H = self.opacity.interp_abs(nu_array)
         
         integral = trapz_log(incident_SED.L_nu * sigma_H, nu_array)
-        
-        #TEMP 之前没考虑到 nu 的升降序，临时补丁
-        if integral < 0:
-            integral = -integral
         
         return np.sqrt(integral / (4 * np.pi * IR_Flux))
     

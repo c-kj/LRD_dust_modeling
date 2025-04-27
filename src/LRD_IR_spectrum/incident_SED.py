@@ -10,23 +10,30 @@ from astropy.units import Quantity
 
 from .utils import LogLogInterpolator
 
-@dataclass(frozen=True, kw_only=True)
 class SED:
     """SED: 表示光谱 (nu, L_nu) 的类。  
-    输入: nu, L_nu，都必须带单位且具有兼容的量纲。nu 最好是递增的。  
+    输入: nu, L_nu，都必须带单位且具有兼容的量纲。
+    L_nu 与 nu 逐点对应，会自动按 nu 的升序排序。
     wavelength, nu_L_nu, L_lambda 等量在每次调用时计算。  
     
     from_file 方法用于从文件中读取。对文件格式有特定的要求，见该方法的 docstring。
-    
-    一个坑：虽然 frozen，但如果做类似 `sed.nu *= 2` 的操作，即便会报错，但也会改变原来的值。
     """
-    nu: Quantity['frequency']
-    L_nu: Quantity[u.erg/u.s/u.Hz]
+    
+    @u.quantity_input
+    def __init__(self, *, 
+                 nu: Quantity['frequency'], 
+                 L_nu: Quantity[u.erg/u.s/u.Hz]):
+        # 按照频率升序排列数据
+        indices = np.argsort(nu)
+        self.nu: Quantity = nu[indices]
+        self.L_nu: Quantity = L_nu[indices]
+    
     
     def __eq__(self, other):  # 不用 dataclass 定义的 __eq__，因为它不能处理 numpy 数组的相等
         if not isinstance(other, self.__class__):
             warn(f"比较的对象类型为 {type(other)}，与 {self.__class__} 不同，需要谨慎考虑比较是否合理")
         return np.all(self.nu == other.nu) and np.all(self.L_nu == other.L_nu)
+    
     
     @property
     def wavelength(self) -> Quantity[u.AA] :
@@ -40,6 +47,20 @@ class SED:
     def L_lambda(self) -> Quantity[u.erg/u.s/u.AA]:
         return self.nu_L_nu / self.wavelength
     
+    # L_nu 和其等价表示 (nu_L_nu 等) 的插值函数，以 nu 为自变量。
+    # 目前不缓存它们，因为调用次数不多。这样可以避免更改时缓存不更新的潜在问题。
+    @property
+    def interp_L_nu(self):
+        return LogLogInterpolator(self.nu, self.L_nu)
+    
+    @property
+    def interp_nu_L_nu(self):
+        return LogLogInterpolator(self.nu, self.nu_L_nu)
+    
+    @property
+    def interp_L_lambda(self):
+        return LogLogInterpolator(self.nu, self.L_lambda)
+    
     
     #TODO 把 bolometric correction 作为可选项，参数可以传入
     @classmethod
@@ -49,12 +70,11 @@ class SED:
         
         以前是 IncidentSED 类，现在整合为 SED 的类方法
         """
-        # the incident SED data need to be in the format of wavelength (Angstrom) and L_lambda (erg/s/Angstrom)
         #* 目前假定文件中的数据是有序且无重复的
         data = np.loadtxt(filename, comments='#', delimiter=' ', usecols=(0, 1))
-        #* 目前把 wavelength 和 L_lambda 都反转，从而使得最终的 nu 递增，而 wavelength 对应地递减
-        wavelength = data[::-1, 0] * u.AA  # 假定文件中的 wavelength 单位是 Angstrom
-        L_lambda = data[::-1, 1] * u.erg/u.s/u.AA
+        # 这里不用在乎升降序，最后传到 __init__ 中时会自动排序
+        wavelength = data[:, 0] * u.AA  # 假定文件中的 wavelength 单位是 Angstrom
+        L_lambda = data[:, 1] * u.erg/u.s/u.AA
         
         nu: Quantity['frequency'] = wavelength.to(u.Hz, u.spectral())  # 带单位 Hz
         L_nu = L_lambda * wavelength**2 / const.c
@@ -69,9 +89,6 @@ class SED:
         L_nu: Quantity[u.erg/u.s/u.Hz] = L_nu / LogLogInterpolator(wavelength, L_nu)(1450 * u.AA) * NormalizedFactorAt1450  # 归一化后，L_nu 在 1450 Angstrom 处的值为 NormalizedFactorAt1450
         
         return cls(nu=nu, L_nu=L_nu)
-
-SED.__init__ = u.quantity_input(SED.__init__)  # 给 __init__ 方法添加单位检查。因为 SED 是 dataclass 不好直接装饰到 __init__ 上，所以在这里单独处理
-
 
 
 def IncidentSED(filename: str):

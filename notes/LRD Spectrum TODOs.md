@@ -8,7 +8,7 @@
 - [ ] 画出  $n_0, \gamma$ 参数空间图上的图
 - [ ] 记录周二和 Kohei 聊的内容，关于项目的目标、讨论部分
 
-## 待解决的问题
+## 科学问题
 
 - [ ] **Feedback 的正确处理**
 
@@ -17,9 +17,13 @@
   - [ ] 总光深 < 1 怎么处理？
   - [ ] 光学厚的 thin layer，能否用单温度处理？
   - [ ] thin layer 模型是否有收敛？
+  - [ ] 用 $\tau_{\rm rad} = 1$ 作为堆积位置合理吗？
+    - [ ] 说是有模拟文献的依据
+    - [ ] 可以自己简单推一下，辐射压 vs 引力 
   - [ ] **tau_UV 怎么取？**
     - [ ] 之前是取 截面最大值。这对于更广泛的 opacity law 并不合适。
     - [ ] 取 rad pressure cross 对 incident L_nu 平均的值作为截面，然后拿这个截面算 tau_UV
+      - [x] Draine 2011 书上 23.10.1 节可以作为参考
 
 - [ ] **换不同的 opacity law**
 
@@ -88,15 +92,27 @@
   - [x] 处理 sigma_H_V 的指定
   - [x] 从 A / A_V 曲线转换为 opacity law：`from_extinction_data`、`from_extinction_model`
 
+- [ ] 数值积分的处理
+  - [ ] `trapz_log` 真的比 `trpz` 更好吗？？？
+  - [ ] 对于很粗略的 SED，中间部分应该假设如何插值？
+  - [ ] 原理问题
+    - [ ] 搞清楚数值积分的「采样」和「rule」之间的区别与联系
+    - [ ] `trapz_log` 的本质意义
+      - [ ] 相当于 $\int y x \, {\rm d}\log(x)$ ，相当于在 $\log(x), yx$ 上的梯形法则？
+      - [ ] 收敛性、收敛阶数与普通的 trapz 一致吗？
+      - [ ] 这样做对于 $\log(x)$ 接近均匀的 sample 来说，真的更好吗？
 
 
 
 
 
-- [ ] **解决 nu 和 wavelength 升降序造成积分带负号的问题**
-- [ ] **为什么我跑了一下，和政融的 T_out 不一致？**
+
+- [x] 解决 nu 和 wavelength 升降序造成积分带负号的问题
+- [ ] **nu_array 应该用 opacity 的还是 SED 的？**
+- [x] 为什么我跑了一下，和政融的 T_out 不一致？
 - [ ] **能量守恒问题**
   - [ ] 把 A_V 对应吸收的总能量、IR 发射的总能量都算出来，作为参考
+  - [ ] 写成函数 or 类的方法
 - [ ] **写一个最朴素的 single layer model，用于对比**
 - [ ] 潜在的问题：目前各种函数（n_profile, UV_Flux 等）都没有限定 r_in < r < r_out
 
