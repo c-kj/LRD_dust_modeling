@@ -18,7 +18,7 @@ class OpacityData:
     
     Init parameters (keyword-only)：
     - nu: 频率数组
-    - sigma_H_ext, sigma_H_abs: 与 nu 对应的 extinction & absorption cross section
+    - sigma_H_ext, sigma_H_abs: 与 nu 对应的 extinction & absorption cross section per H
     - filename: Optional, 用于记录数据来源的文件名。
     
     Alternative constructor:
@@ -81,7 +81,7 @@ class OpacityData:
     
     @property
     def sigma_H_ext_V(self) -> Quantity['area']:
-        """V band extinction cross section per H (sigma_H_ext)"""
+        """extinction cross section per H (sigma_H_ext) in V band"""
         nu_V: Quantity['frequency'] = (5470 * u.AA).to(u.Hz, equivalencies=u.spectral())
         return self.interp_ext(nu_V)
     
