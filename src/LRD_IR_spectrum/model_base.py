@@ -238,3 +238,21 @@ class LRD_IR_ModelBase(ABC):
             nu_array = nu_array.to(u.Hz, copy=False)
         
         return self.calc_L_nu(nu_array, r_sample_num) * nu_array
+    
+    
+    # 用于计算发射总功率 L 的方法
+    @u.quantity_input
+    def calc_L_from_L_nu(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
+        """从 L_nu 计算 dust 发射的总功率"""
+        # 目前没加入可以指定的 nu_array，因为好像意义不大。
+        return trapz_log(self.calc_L_nu(r_sample_num=r_sample_num), self.opacity.nu)
+    
+    def check_Luminosity(self):
+        """调用模型上所有计算总光度 L 的方法，用于检查其一致性。  
+        返回值为一个字典，key 为方法名，value 为对应的 L 值。
+        """
+        Luminosity_dict: dict[str, Quantity['power']] = {
+            method_name : getattr(self, method_name)() 
+            for method_name in self.__dir__() if method_name.startswith('calc_L_from')  # 通过方法名的开头来识别「计算总光度的方法」。这里不用 dir(self) 是因为它按字母序排列。
+        }
+        return Luminosity_dict

@@ -62,17 +62,28 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
 
     @u.quantity_input
     def UV_Flux(self, r: Quantity['length'], tau: Quantity[''] = None) -> Quantity[u.erg / u.s]:
-        """计算方程左端，即 UV Flux。
+        """计算方程左端的 UV Flux，即尘埃颗粒吸收的能流通量。  
         r 可以是标量，或者 numpy 数组。返回值与其形状一致。
         """
         if tau is None:  #* 允许指定 tau，从而可以设 tau=0 以计算无遮挡的情况，比如计算 r_in、T_ph 时。
             tau = self.tau_UV_profile(r)
         return self.L_UV * self.sigma_H_UV_abs * np.exp( -tau ) / (4 * np.pi * r**2) 
     
+    @u.quantity_input
+    def UV_Flux_with_feedback(self, r: Quantity['length']) -> Quantity[u.erg / u.s]:
+        """计算方程左端的 UV Flux，即尘埃颗粒吸收的能流通量。考虑 feedback 效应。  
+        目前对 feedback 的近似处理是：假定 feedback 把 dust 扫到 r_ph 处，堆积成一个 thin shell。近似取这个 thin shell 内的光深为 0，而不考虑从 0 到 1 的渐变。  
+        当 tau_ph 设为 0 时，r_ph == r_in，回退到没有 feedback 的情况。  
+        r 可以是标量，或者 numpy 数组。返回值与其形状一致。
+        """
+        #* 处理 feedback 造成的效应：等效地，我们按照原来的 dust 密度、温度分布，只是在计算 r_ph 以内的 UV Flux 时，将其设为 r_ph 处的 UV Flux 值，并设 tau=0，因为 r_ph 以内不再有 dust 遮蔽。这样，这部分 dust 的辐射谱贡献就等效于 r_ph 处的 thin shell 了。
+        # 取 r < r_ph 而非 <= ，这样在严格的 r = r_ph 处（thin shell 的外沿）相当于仍有 tau = 1，从而更贴近真实情况。
+        return np.where(r < self.r_ph, self.UV_Flux(self.r_ph, tau=0), self.UV_Flux(r))  # tau = 0 是上界。若令 tau = 1 则为下界。
+    
 
     @u.quantity_input
     def IR_Flux(self, T: Quantity['temperature'], method: str = 'trapz_log') -> Quantity[u.erg / u.s]:
-        """计算方程右端，即 IR Flux。
+        """计算方程右端的 IR Flux，即尘埃颗粒再发射的能流通量。  
         T 可以是标量，或者 numpy 数组。返回值始终为 array
         """
         nu_array = self.opacity.nu
@@ -107,7 +118,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
 
     @u.quantity_input
     def _T_dust_eqn(self, r: Quantity['length'], T: Quantity['temperature'], **kwargs) -> Quantity[u.erg / u.s]:
-        return self.UV_Flux(r) - self.IR_Flux(T, **kwargs)
+        return self.UV_Flux_with_feedback(r) - self.IR_Flux(T, **kwargs)
 
     @u.quantity_input
     def T_dust_profile_brentq(self, r: Quantity['length']) -> Quantity[u.K]:
@@ -130,15 +141,34 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         IR_Flux_array = self.IR_Flux(T_array)
         interp = LogLogInterpolator(IR_Flux_array, T_array, bounds_error=False, fill_value='extrapolate')  #* 在越界时不报错，而是外插。由于数值误差，UV_Flux(r_in) 可能会轻微地超出 IR_Flux(T_sub)。这样可以避免报错。
         
-        UV_Flux = self.UV_Flux(r)  # 形状与 r 相同，可能是标量，也可能是数组。
-        #* 处理 feedback 造成的效应：等效地，我们按照原来的 dust 密度、温度分布，只是在计算 r_ph 以内的 UV Flux 时，将其设为 r_ph 处的 UV Flux 值，并设 tau=0，因为 r_ph 以内不再有 dust 遮蔽。这样，这部分 dust 的辐射谱贡献就等效于 r_ph 处的 thin shell 了。
-        # 取 r < r_ph 而非 <= ，这样在严格的 r = r_ph 处（thin shell 的外沿）相当于仍有 tau = 1，从而更贴近真实情况。
-        UV_Flux = np.where(r < self.r_ph, self.UV_Flux(self.r_ph, tau=0), UV_Flux)   # tau = 0 是上界。若令 tau = 1 则为下界。
+        UV_Flux = self.UV_Flux_with_feedback(r) # 考虑了 feedback 的效应，对 UV_Flux 做了修正。 # 形状与 r 相同，可能是标量，也可能是数组。
         
         T_dust = np.where(UV_Flux == 0, 0.0, interp(UV_Flux))  # 如果 IR_Flux 为 0，那么 T = 0，而非使用插值，因为插值可能给出 nan.
         return np.maximum(T_dust, self.T_floor)  # 低于 T_floor 的温度都设为 T_floor
     
     
+    # 用于计算吸收总功率 L 的方法
+    @u.quantity_input
+    def calc_L_from_UV_Flux(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
+        """从 UV_Flux 计算 dust 吸收的总功率，但不考虑 feedback 效应"""
+        r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)
+        return trapz_log(self.UV_Flux(r_array) * self.n_profile(r_array) * 4*np.pi * r_array**2, r_array)
+    
+    @u.quantity_input
+    def calc_L_from_UV_Flux_with_feedback(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
+        """从 UV_Flux 计算 dust 吸收的总功率，考虑 feedback 效应"""
+        r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)
+        return trapz_log(self.UV_Flux_with_feedback(r_array) * self.n_profile(r_array) * 4*np.pi * r_array**2, r_array)
+    
+    # 用于计算发射总功率 L 的方法
+    @u.quantity_input
+    def calc_L_from_IR_Flux(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
+        """从 IR_Flux 计算 dust 发射的总功率"""
+        r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)
+        return trapz_log(self.IR_Flux(self.T_dust_profile(r_array)) * self.n_profile(r_array) * 4*np.pi * r_array**2, r_array)
+
+
+
 class OrionLRDModel(SemiOrionLRDModel):
     
     @u.quantity_input
@@ -166,7 +196,7 @@ class OrionLRDModel(SemiOrionLRDModel):
     @override
     @u.quantity_input
     def UV_Flux(self, r: Quantity['length'], tau: Quantity[''] = None) -> Quantity[u.erg / u.s]:
-        """计算方程左端，即 UV Flux。
+        """计算方程左端的 UV Flux，即尘埃颗粒吸收的能流通量。  
         r 是 Quantity。其形状可以是 scalar or 一维数组，返回值与其形状一致。
         tau 要么是一个 scalar，要么是一个二维数组，其形状 = (len(nu_array), len(r))
         """

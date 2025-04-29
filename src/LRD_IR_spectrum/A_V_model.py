@@ -9,7 +9,7 @@ from astropy.units import Quantity, Magnitude
 from .opacity import OpacityData
 from .incident_SED import SED
 from .OrionLRD import OrionLRDModel
-from .utils import quantity_to_latex
+from .utils import quantity_to_latex, trapz_log
 
 MagnitudeLike = Quantity[u.mag] | Quantity['']  # 可以是纯数字 (Real，包括 int|float) 或单位与 magnitude 兼容的 Quantity (xxx * u.mag、xxx * u.mag()、xxx * u.dex 等)。单个数字或 np.ndarray 均可。
 
@@ -107,3 +107,12 @@ class A_V_Model(OrionLRDModel):
         $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm ph}}=$ {fmt(self.r_ph)}, $r_{{\rm out}}=$ {fmt(self.r_out)}, 
         $T_{{\rm sub}}=$ {fmt(self.T_sub)}, $T_{{\rm out}}=$ {fmt(self.T_out)} )
         """
+        
+    # 用于计算吸收总功率 L 的方法
+    @u.quantity_input
+    def calc_L_from_extinction(self) -> Quantity[u.erg / u.s]:
+        """根据消光前后的 de-reddened SED vs observed SED 计算吸收总功率"""
+        #! 这里用 SED 的 nu 可能太粗糙了！也许插值更好
+        # 红外 SED 数据点比较稀疏，不论是用 trapz_log 还是如何插值采样，都会有较大不确定性。但因为红外部分消光很弱，所以这部分的差距其实不显著。
+        nu_array = self.incident_SED.nu
+        return trapz_log(self.incident_SED.L_nu - self.observed_SED.L_nu, nu_array)
