@@ -72,13 +72,12 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
     @u.quantity_input
     def UV_Flux_with_feedback(self, r: Quantity['length']) -> Quantity[u.erg / u.s]:
         """计算方程左端的 UV Flux，即尘埃颗粒吸收的能流通量。考虑 feedback 效应。  
-        目前对 feedback 的近似处理是：假定 feedback 把 dust 扫到 r_ph 处，堆积成一个 thin shell。近似取这个 thin shell 内的光深为 0，而不考虑从 0 到 1 的渐变。  
+        目前对 feedback 的近似处理是：假定 feedback 把 dust 扫到 r_ph 处，堆积成一个 thin shell。每个尘埃颗粒所处的光深 tau 不变，只是位置（1/4πr^2 中的 r）变为 r_ph。  
         当 tau_ph 设为 0 时，r_ph == r_in，回退到没有 feedback 的情况。  
         r 可以是标量，或者 numpy 数组。返回值与其形状一致。
         """
-        #* 处理 feedback 造成的效应：等效地，我们按照原来的 dust 密度、温度分布，只是在计算 r_ph 以内的 UV Flux 时，将其设为 r_ph 处的 UV Flux 值，并设 tau=0，因为 r_ph 以内不再有 dust 遮蔽。这样，这部分 dust 的辐射谱贡献就等效于 r_ph 处的 thin shell 了。
-        # 取 r < r_ph 而非 <= ，这样在严格的 r = r_ph 处（thin shell 的外沿）相当于仍有 tau = 1，从而更贴近真实情况。
-        return np.where(r < self.r_ph, self.UV_Flux(self.r_ph, tau=0), self.UV_Flux(r))  # tau = 0 是上界。若令 tau = 1 则为下界。
+        # 处理 feedback 造成的效应：将 1/4πr^2 中的 r 使用 feedback 调整后的值，而 tau 则使用原有的 r。相当于只在 r<r_ph 的地方把 1/4πr^2 中的 r 替换为 r_ph。
+        return self.UV_Flux(self.r_with_feedback(r), tau=self.tau_UV_profile(r))
     
 
     @u.quantity_input
@@ -158,14 +157,18 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
     def calc_L_from_UV_Flux_with_feedback(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
         """从 UV_Flux 计算 dust 吸收的总功率，考虑 feedback 效应"""
         r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)
-        return trapz_log(self.UV_Flux_with_feedback(r_array) * self.n_profile(r_array) * 4*np.pi * r_array**2, r_array)
+        # 要把 4πr^2 中的 r 改为 dust 颗粒实际所在的位置，也即 r_with_feedback。而 T 和 n 的 profile 中所使用的仍是原先的 r。
+        r_with_feedback = self.r_with_feedback(r_array)
+        return trapz_log(self.UV_Flux_with_feedback(r_array) * self.n_profile(r_array) * 4*np.pi * r_with_feedback**2, r_array)
     
     # 用于计算发射总功率 L 的方法
     @u.quantity_input
     def calc_L_from_IR_Flux(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
         """从 IR_Flux 计算 dust 发射的总功率"""
         r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)
-        return trapz_log(self.IR_Flux(self.T_dust_profile(r_array)) * self.n_profile(r_array) * 4*np.pi * r_array**2, r_array)
+        # 要把 4πr^2 中的 r 改为 dust 颗粒实际所在的位置，也即 r_with_feedback。而 T 和 n 的 profile 中所使用的仍是原先的 r。
+        r_with_feedback = self.r_with_feedback(r_array)
+        return trapz_log(self.IR_Flux(self.T_dust_profile(r_array)) * self.n_profile(r_array) * 4*np.pi * r_with_feedback**2, r_array)
 
 
 
@@ -213,6 +216,20 @@ class OrionLRDModel(SemiOrionLRDModel):
         integral = trapz_log(incident_SED.L_nu * sigma_H * np.exp(-tau), nu_array)
         
         return integral / (4*np.pi * r**2)
+    
+    @override
+    @u.quantity_input
+    def UV_Flux_with_feedback(self, r: Quantity['length']) -> Quantity[u.erg / u.s]:
+        """计算方程左端的 UV Flux，即尘埃颗粒吸收的能流通量。考虑 feedback 效应。  
+        目前对 feedback 的近似处理是：假定 feedback 把 dust 扫到 r_ph 处，堆积成一个 thin shell。每个尘埃颗粒所处的光深 tau 不变，只是位置（1/4πr^2 中的 r）变为 r_ph。  
+        当 tau_ph 设为 0 时，r_ph == r_in，回退到没有 feedback 的情况。  
+        r 可以是标量，或者 numpy 数组。返回值与其形状一致。
+        """
+        r_arr = r[..., None]  # 在 r 的最后一个 axis 上添加一个维度。如果 r 是标量则转化为一维数组，r 是以为数组则转化为二维数组。
+        nu_array = self.incident_SED.nu
+        tau = self.tau_nu_profile(nu_array, r_arr)
+        # 处理 feedback 造成的效应：将 1/4πr^2 中的 r 使用 feedback 调整后的值，而 tau 则使用原有的 r。相当于只在 r<r_ph 的地方把 1/4πr^2 中的 r 替换为 r_ph。
+        return self.UV_Flux(self.r_with_feedback(r), tau=tau)
     
     @override
     @u.quantity_input

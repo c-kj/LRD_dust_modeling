@@ -90,6 +90,20 @@ class LRD_IR_ModelBase(ABC):
     @abstractmethod  # 抽象方法：子类必须实现这个方法
     def _calc_r_in(self):  # in [pc]
         pass
+    
+    @u.quantity_input
+    def r_with_feedback(self, r: Quantity['length']) -> Quantity[u.pc]:
+        """考虑 feedback 反馈效果时，从尘埃原位置 r 到新位置 r' 的映射。  
+        类似于流体的 Lagrangian 坐标。  
+        
+        输入：r 是某个尘埃颗粒原先（无反馈）时的位置。  
+        返回：r' 是考虑 feedback 后，尘埃所处的新位置。  
+        r 可以是标量，也可以是数组。返回值与其形状相同。
+        """
+        if hasattr(self, 'r_ph'):  # 这里用 r_ph 属性来判断模型是否支持 feedback。其实也可以用继承的方法，基类中只是返回 r，而子类中 override 成相应的实现。
+            return np.maximum(r, self.r_ph)  # 目前对 feedback 的处理：原先在 r_ph 以内的尘埃都会被扫到 r_ph 处堆积，而其余位置不变。
+        else:
+            return r
 
     @u.quantity_input
     def n_profile(self, r: Quantity['length']) -> Quantity[u.cm**-3]:
@@ -200,21 +214,24 @@ class LRD_IR_ModelBase(ABC):
 
         # 被积函数
         @u.quantity_input #TODO 为了速度，这里可以不做检查。而且返回值也不该转换单位
-        def func(nu: Quantity['frequency'], r: Quantity['length']) -> Quantity[u.erg / u.s / u.Hz / u.cm**3]:
-            return Planck_B_nu(nu, self.T_dust_profile(r)) * self.n_profile(r) * 4 * np.pi * r**2  # 这里的 4pi 是 dV = 4 pi r^2 dr 的系数
+        def integrand(nu: Quantity['frequency'], r: Quantity['length']) -> Quantity[u.erg / u.s / u.Hz / u.cm**3]:
+            # note: 这里的 self 实际上是从函数外部直接引用的，没有传入
+            # 要把 4πr^2 中的 r 改为 dust 颗粒实际所在的位置，也即 r_with_feedback。而 T 和 n 的 profile 中所使用的仍是原先的 r。
+            r_with_feedback = self.r_with_feedback(r)
+            return Planck_B_nu(nu, self.T_dust_profile(r)) * self.n_profile(r) * 4 * np.pi * r_with_feedback**2  # 这里的 4pi 是 dV = 4 pi r^2 dr 的系数
 
         # * 主要是采样方式 (log / linear) 对积分的收敛性影响较大。积分是用 trapz 还是 trapz_log 影响较小。
         if self.method_L_nu == 'quad':
-            L_nu = quad_vec_unit(lambda r: func(nu_array, r), self.r_in, self.r_out)[0]
+            L_nu = quad_vec_unit(lambda r: integrand(nu_array, r), self.r_in, self.r_out)[0]
         elif self.method_L_nu == 'quad_log':
-            L_nu = quad_vec_log(lambda r: func(nu_array, r), self.r_in, self.r_out)[0]
+            L_nu = quad_vec_log(lambda r: integrand(nu_array, r), self.r_in, self.r_out)[0]
         elif self.method_L_nu == 'trapz':
             r_array = np.linspace(self.r_in, self.r_out, r_sample_num)   # 实际上，linspace 采样是很不合适的，收敛性很差。
-            integrand_array = func(nu_array[:, None], r_array)
+            integrand_array = integrand(nu_array[:, None], r_array)
             L_nu = integrate.trapezoid(integrand_array, r_array)
         elif self.method_L_nu == 'trapz_log':
             r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)  # sample in log scale
-            integrand_array = func(nu_array[:, None], r_array)
+            integrand_array = integrand(nu_array[:, None], r_array)
             L_nu = trapz_log(integrand_array, r_array)
         else:
             raise ValueError(f"method {self.method_L_nu = } is invalid! ")
