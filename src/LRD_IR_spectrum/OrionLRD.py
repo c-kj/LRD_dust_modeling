@@ -21,8 +21,11 @@ from .model_base import LRD_IR_ModelBase
 class SemiOrionLRDModel(LRD_IR_ModelBase):
     """IR 出射按照具体的 opacity 计算，而 UV 入射仍是直接给定 L_UV"""
     
-    T_floor = 0.0 * u.K  # 温度的下限，低于这个温度的区域温度都设为这个值  #TODO 目前设为类的属性，以后可以考虑作为参数设定
-    T_accuracy = 1.0 * u.K      #* 精确到 1 K
+    config = LRD_IR_ModelBase.config | {  # 从父类的 config 上拓展
+        'IR_Flux.integrator': 'trapz_log',  # IR_Flux 的积分方法
+        'T_floor': 0.0 * u.K,  # 温度的下限，低于这个温度的区域温度都设为这个值
+        'T_accuracy': 1.0 * u.K,  # 温度精确到 1 K。这决定了 T_dust_profile 中反插表的间距，或者 brentq 的 xtol
+    }
     
     @u.quantity_input
     def __init__(
@@ -34,13 +37,14 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         T_sub: Quantity['temperature'],
         NH_target: Quantity['column density'] | None,
         opacity: OpacityData,
-        tau_ph: float = 1.0   # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
+        tau_ph: float = 1.0,   # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
+        config: dict = {},
     ):
         #? 近似：UV 波段的 sigma_H 直接取 opacity 的最大值了，这对吗？
         self.sigma_H_UV_ext = opacity.sigma_H_ext.max()
         self.sigma_H_UV_abs = opacity.sigma_H_abs.max()
         self.tau_ph = tau_ph
-        super().__init__(n_0=n_0, gamma=gamma, L_UV=L_UV, T_sub=T_sub, NH_target=NH_target, opacity=opacity)
+        super().__init__(n_0=n_0, gamma=gamma, L_UV=L_UV, T_sub=T_sub, NH_target=NH_target, opacity=opacity, config=config)
 
     @u.quantity_input
     def tau_UV_profile(self, r: Quantity['length']) -> Quantity['']:
@@ -81,7 +85,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
     
 
     @u.quantity_input
-    def IR_Flux(self, T: Quantity['temperature'], method: str = 'trapz_log') -> Quantity[u.erg / u.s]:
+    def IR_Flux(self, T: Quantity['temperature']) -> Quantity[u.erg / u.s]:
         """计算方程右端的 IR Flux，即尘埃颗粒再发射的能流通量。  
         T 可以是标量，或者 numpy 数组。返回值始终为 array
         """
@@ -91,6 +95,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         def integrand(nu: Quantity['frequency'], T: Quantity['temperature']) -> Quantity[u.erg / u.s / u.Hz]:
             return self.opacity.interp_abs(nu) * Planck_B_nu(nu, T)
 
+        method: str = self.config['IR_Flux.integrator']
         if method == 'quad':  # 这个方法默认情况下会给出 0 值，可能是因为自适应算法没有注意到峰的位置。
             flux = quad_vec_unit(lambda nu: integrand(nu, T), nu_array.min(), nu_array.max())[0]
         elif method == 'quad_log':  #! 似乎是接近准确的，但非常慢 (单个计算 1min)
@@ -100,7 +105,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         elif method == 'trapz_log':
             flux = trapz_log(integrand(nu_array[:, None], T), nu_array[:, None], axis=0)  #* 由于 trapz_log 中有 f(x) * x，所以 nu_array 也要变成二维才能 broadcast
         else: 
-            raise ValueError(f"method {method} is invalid! ")
+            raise ValueError(f"method {method = } is invalid! ")
 
         flux *= 4*np.pi
 
@@ -124,7 +129,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         if isinstance(r, (int, float)) or r.size == 1:
             T_min = 0 * u.K
             T_max = self.T_sub
-            return optimize.brentq(lambda T_val: self._T_dust_eqn(r, T_val * u.K).value, T_min.value, T_max.value, xtol=self.T_accuracy.value) * u.K
+            return optimize.brentq(lambda T_val: self._T_dust_eqn(r, T_val * u.K).value, T_min.value, T_max.value, xtol=self.config['T_accuracy'].value) * u.K
         else:
             return np.array([self.T_dust_profile_brentq(r_i) for r_i in r])
 
@@ -132,7 +137,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
     def T_dust_profile(self, r: Quantity['length']) -> Quantity[u.K]:
         
         # 准备一个从 IR_flux 到 T 的插值表，从而加速计算
-        T_array = np.linspace(1*u.K, self.T_sub, int((self.T_sub - 1*u.K) / self.T_accuracy) + 1)
+        T_array = np.linspace(1*u.K, self.T_sub, int((self.T_sub - 1*u.K) / self.config['T_accuracy']) + 1)
         T_array_low = np.geomspace(1e-10 * u.K, 1 * u.K, 10, endpoint=False)  # 在 < 1 K 的范围，用 log 尺度取几个点，从而避免直接把下界取 0 导致 log 插值错误的问题，也避免这里在 log scale 下间隔过大。
         #FUTURE 这里的低温下界似乎太低了，造成 IR_Flux 非常小，出现 log(0)，不是很有必要。考虑改大一点
         T_array = np.concatenate([T_array_low, T_array]) 
@@ -143,29 +148,29 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         UV_Flux = self.UV_Flux_with_feedback(r) # 考虑了 feedback 的效应，对 UV_Flux 做了修正。 # 形状与 r 相同，可能是标量，也可能是数组。
         
         T_dust = np.where(UV_Flux == 0, 0.0, interp(UV_Flux))  # 如果 IR_Flux 为 0，那么 T = 0，而非使用插值，因为插值可能给出 nan.
-        return np.maximum(T_dust, self.T_floor)  # 低于 T_floor 的温度都设为 T_floor
+        return np.maximum(T_dust, self.config['T_floor'])  # 低于 T_floor 的温度都设为 T_floor
     
     
     # 用于计算吸收总功率 L 的方法
     @u.quantity_input
-    def calc_L_from_UV_Flux(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
+    def calc_L_from_UV_Flux(self) -> Quantity[u.erg / u.s]:
         """从 UV_Flux 计算 dust 吸收的总功率，但不考虑 feedback 效应"""
-        r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)
+        r_array = self.get_r_array()
         return trapz_log(self.UV_Flux(r_array) * self.n_profile(r_array) * 4*np.pi * r_array**2, r_array)
     
     @u.quantity_input
-    def calc_L_from_UV_Flux_with_feedback(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
+    def calc_L_from_UV_Flux_with_feedback(self) -> Quantity[u.erg / u.s]:
         """从 UV_Flux 计算 dust 吸收的总功率，考虑 feedback 效应"""
-        r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)
+        r_array = self.get_r_array()
         # 要把 4πr^2 中的 r 改为 dust 颗粒实际所在的位置，也即 r_with_feedback。而 T 和 n 的 profile 中所使用的仍是原先的 r。
         r_with_feedback = self.r_with_feedback(r_array)
         return trapz_log(self.UV_Flux_with_feedback(r_array) * self.n_profile(r_array) * 4*np.pi * r_with_feedback**2, r_array)
     
     # 用于计算发射总功率 L 的方法
     @u.quantity_input
-    def calc_L_from_IR_Flux(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
+    def calc_L_from_IR_Flux(self) -> Quantity[u.erg / u.s]:
         """从 IR_Flux 计算 dust 发射的总功率"""
-        r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)
+        r_array = self.get_r_array()
         # 要把 4πr^2 中的 r 改为 dust 颗粒实际所在的位置，也即 r_with_feedback。而 T 和 n 的 profile 中所使用的仍是原先的 r。
         r_with_feedback = self.r_with_feedback(r_array)
         return trapz_log(self.IR_Flux(self.T_dust_profile(r_array)) * self.n_profile(r_array) * 4*np.pi * r_with_feedback**2, r_array)
@@ -186,10 +191,11 @@ class OrionLRDModel(SemiOrionLRDModel):
         opacity: OpacityData,
         incident_SED: SED,
         tau_ph: float = 1.0,  # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
+        config: dict = {},
     ):
         self.incident_SED = incident_SED
         #* 暂时继承 SemiOrionLRDModel 的 __init__ 方法，从而继承其 tau_UV_profile 所需要的 self.sigma_H_UV_ext
-        super().__init__(n_0=n_0, gamma=gamma, L_UV=L_UV, T_sub=T_sub, NH_target=NH_target, opacity=opacity, tau_ph=tau_ph)
+        super().__init__(n_0=n_0, gamma=gamma, L_UV=L_UV, T_sub=T_sub, NH_target=NH_target, opacity=opacity, tau_ph=tau_ph, config=config)
         
     @u.quantity_input
     def tau_nu_profile(self, nu: Quantity['frequency'], r: Quantity['length']) -> Quantity['']:

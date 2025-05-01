@@ -84,6 +84,7 @@ class A_V_Model(OrionLRDModel):
         opacity: OpacityData,
         observed_SED: SED,  #* 这里必须输入的是 rest frame 的 nu 和 L_nu！ #TODO 强调这里必须是 rest frame
         tau_ph = 1, # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
+        config: dict = {},
         ):
         
         A_V = to_magnitude(A_V)  # 把 A_V 统一为 Magnitude 表示
@@ -97,7 +98,7 @@ class A_V_Model(OrionLRDModel):
         de_reddened_SED = de_redden_SED(observed_SED=observed_SED, A_V=A_V, opacity=opacity)  # 计算 de-reddened SED
         
         # 调用父类的 __init__ 
-        super().__init__(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, incident_SED=de_reddened_SED, tau_ph=tau_ph)
+        super().__init__(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, incident_SED=de_reddened_SED, tau_ph=tau_ph, config=config)
         
     @override
     def _repr_latex_(self):

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from functools import partial
 import logging
+from collections import ChainMap
 
 import numpy as np
 from scipy import integrate, special
@@ -22,9 +23,22 @@ def Planck_B_nu(nu: Quantity['frequency'], T: Quantity['temperature']) -> Quanti
     x = h * nu / (k_B * T)
     return (2 * h / c**2) * nu**3 / (np.exp(x) - 1)
 
-#TODO 重新考虑 抽象基类 该怎么写，最好只提供接口。实现放到 mixin？
+class IPyChainMap(ChainMap):
+    """A subclass of ChainMap that allows for IPython tab completion."""
+    def _ipython_key_completions_(self):  # IPython 检查这个方法来支持在 tab 补全中显示各个 keys
+        return list(self)  # 返回各个 key 组成的列表
+
+
+#FUTURE 重新考虑 抽象基类 该怎么写，最好只提供接口。实现放到 mixin？
 class LRD_IR_ModelBase(ABC):
-    paras_name = ['n_0', 'gamma', 'L_UV', 'T_sub']
+    
+    # 类属性
+    # 类的 config 会被所有实例共享。对其的修改会直接影响所有实例（包括已创建的），因为实例的 config 是 ChainMap。
+    config = {
+        'calc_L_nu.integrator': 'trapz_log',  # calc_L_nu 的积分方法。默认方法是 'trapz_log'，因为 trapz 要显著快于 quad，而 log scale 收敛性显著更好。
+        'r_sample_num': 1000,  # 对 r 积分时，从 r_in 到 r_out 之间采样的点数。
+        'r_sample_scale': 'log',  # get_r_array 采样的 scale。可选 'linear' 或 'log'。
+    }
 
     @u.quantity_input
     def __init__(
@@ -32,31 +46,25 @@ class LRD_IR_ModelBase(ABC):
         n_0: Quantity['number density'],
         gamma: float,
         *,  # 以下参数必须用关键字指定
-        L_UV: Quantity['power'] | None,
+        L_UV: Quantity['power'] | None,  #FUTURE 考虑是否应该在基类中加入 L_UV。
         T_sub: Quantity['temperature'],
         NH_target: Quantity['column density'] | None,
-        opacity: OpacityData,  #TODO 这里似乎不应该要求输入 opacity。L_UV 也应该重新考虑
+        opacity: OpacityData,
+        config: dict = {},  # 注意 config 的默认值是可变的，不要修改它！
     ):
-        """
-        Initialize the model with these parameters. The units are in cgs unless specified otherwise.
-        r_in is in [pc]
-        
-        These input paras should NOT be changed after initialization
-        """
         self.n_0 = n_0
         self.gamma = gamma
         self.L_UV = L_UV
         self.T_sub = T_sub
         self.NH_target = NH_target
         self.opacity = opacity
+        
+        # 用 ChainMap 把传入的 config 和类属性 config 串联，这样实例对 config 的修改会保存在前面；对类属性 config 的修改也会实时更新到实例上（因为 ChainMap 是 View ）
+        self.config = IPyChainMap(config, self.__class__.config)  
+        
         # r_in 目前在初始化时计算。子类应当覆写 _calc_r_in 方法。
-        self.r_in = self._calc_r_in()   # in [pc]  #* 可以在运行时手动修改 r_in
+        self.r_in = self._calc_r_in()  #* 可以在运行时手动修改 r_in
     
-
-    @property
-    def paras(self):
-        """提取这个模型所有必要的参数。可用于生成新的模型、做 Hash 等。子类可以覆写类属性 paras_name。"""
-        return {self.__dict__[name] for name in self.paras_name}
 
     # 目前暂时废弃 __repr__，避免维护成本。反正 Jupyter notebook 里显示用的也是 latex 格式
     # def __repr__(self):
@@ -166,6 +174,23 @@ class LRD_IR_ModelBase(ABC):
             logging.warning("r_out is inf due to float overflow.")
             
         return r_out
+    
+    def get_r_array(self, r_sample_num: int | None = None, r_sample_scale: str | None = None) -> Quantity[u.pc]:
+        """给出 r_in 和 r_out 之间采样的 r_array。  
+        因为经常使用，所以抽出来作为一个方法，从而统一控制。  
+        选项如果不指定，则 fallback 到 self.config 中的默认值。
+        """
+        if r_sample_num is None:  # 如果没有指定采样点数，则使用 config 中的默认值
+            r_sample_num = self.config['r_sample_num']
+        if r_sample_scale is None:  # 如果没有指定采样 scale，则使用 config 中的默认值
+            r_sample_scale = self.config['r_sample_scale']
+            
+        if r_sample_scale == 'log':
+            return np.geomspace(self.r_in, self.r_out, num=r_sample_num)
+        elif r_sample_scale == 'linear':  # 实际上，linspace 采样是很不合适的，收敛性很差。
+            return np.linspace(self.r_in, self.r_out, num=r_sample_num)
+        else:
+            raise ValueError(f"get_r_array: {r_sample_scale = } is not supported! ")
 
 
     @u.quantity_input
@@ -185,12 +210,11 @@ class LRD_IR_ModelBase(ABC):
     def T_out(self) -> Quantity[u.K]:
         return self.T_dust_profile(self.r_out)
 
-    method_L_nu = 'trapz_log'  # 默认方法是 'trapz_log'，因为 trapz 要显著快于 quad，而 log scale 收敛性显著更好。
     @u.quantity_input(equivalencies=u.spectral())  # 兼容各种可以在 u.spectral() 等效下转换为频率的物理量
     def calc_L_nu(
         self,
         nu_array: Quantity['frequency'] | None = None,
-        r_sample_num: int = 100,
+        r_sample_num: int | None = None,
     ) -> Quantity[u.erg / u.s / u.Hz]:
         """calc L_nu at given frequency array, using the given opacity data
 
@@ -199,7 +223,9 @@ class LRD_IR_ModelBase(ABC):
         nu_array : Quantity['frequency'] | None, optional
             If not specified (default = None), will use opacity.nu.
             可以是任何可以在 u.spectral() 等效下转换为频率的数组，比如波长数组。
-
+        r_sample_num : int | None, optional
+            采样点数。默认值不指定时，取 self.config['r_sample_num']。
+        
         Returns
         -------
         L_nu : Quantity[u.erg / u.s / u.Hz]
@@ -220,21 +246,22 @@ class LRD_IR_ModelBase(ABC):
             r_with_feedback = self.r_with_feedback(r)
             return Planck_B_nu(nu, self.T_dust_profile(r)) * self.n_profile(r) * 4 * np.pi * r_with_feedback**2  # 这里的 4pi 是 dV = 4 pi r^2 dr 的系数
 
-        # * 主要是采样方式 (log / linear) 对积分的收敛性影响较大。积分是用 trapz 还是 trapz_log 影响较小。
-        if self.method_L_nu == 'quad':
+        #* 主要是采样方式 (log / linear) 对积分的收敛性影响较大。积分是用 trapz 还是 trapz_log 影响较小。
+        L_nu_integrator: str = self.config['calc_L_nu.integrator']
+        if L_nu_integrator == 'quad':
             L_nu = quad_vec_unit(lambda r: integrand(nu_array, r), self.r_in, self.r_out)[0]
-        elif self.method_L_nu == 'quad_log':
+        elif L_nu_integrator == 'quad_log':
             L_nu = quad_vec_log(lambda r: integrand(nu_array, r), self.r_in, self.r_out)[0]
-        elif self.method_L_nu == 'trapz':
-            r_array = np.linspace(self.r_in, self.r_out, r_sample_num)   # 实际上，linspace 采样是很不合适的，收敛性很差。
+        elif L_nu_integrator == 'trapz':
+            r_array = self.get_r_array(r_sample_num=r_sample_num, r_sample_scale='linear')  # 实际上，linspace 采样是很不合适的，收敛性很差。#FUTURE 可以考虑改为使用 get_r_array 的默认值，从 config 中选择 scale。
             integrand_array = integrand(nu_array[:, None], r_array)
             L_nu = integrate.trapezoid(integrand_array, r_array)
-        elif self.method_L_nu == 'trapz_log':
-            r_array = np.geomspace(self.r_in, self.r_out, r_sample_num)  # sample in log scale
+        elif L_nu_integrator == 'trapz_log':
+            r_array = self.get_r_array(r_sample_num=r_sample_num)  # sample in log scale
             integrand_array = integrand(nu_array[:, None], r_array)
             L_nu = trapz_log(integrand_array, r_array)
         else:
-            raise ValueError(f"method {self.method_L_nu = } is invalid! ")
+            raise ValueError(f"method {L_nu_integrator = } is invalid! ")
 
         L_nu *= 4 * np.pi * sigma_H   # 最后，乘上积分前面统一的 factor。sigma_H 这个关于 nu 的数组是提到积分外面来的。这里的 4pi 是出射立体角 Omega
 
@@ -244,7 +271,7 @@ class LRD_IR_ModelBase(ABC):
     def calc_nu_L_nu(
         self,
         nu_array: Quantity['frequency'] | None = None,
-        r_sample_num: int = 100,
+        r_sample_num: int | None = None,
     ) -> Quantity[u.erg / u.s]:
         """与 calc_L_nu 类似，但计算的是 nu * L_nu  
         参见 calc_L_nu 的文档
@@ -259,7 +286,7 @@ class LRD_IR_ModelBase(ABC):
     
     # 用于计算发射总功率 L 的方法
     @u.quantity_input
-    def calc_L_from_L_nu(self, *, r_sample_num: int = 1000) -> Quantity[u.erg / u.s]:
+    def calc_L_from_L_nu(self, *, r_sample_num: int | None = None) -> Quantity[u.erg / u.s]:
         """从 L_nu 计算 dust 发射的总功率"""
         # 目前没加入可以指定的 nu_array，因为好像意义不大。
         return trapz_log(self.calc_L_nu(r_sample_num=r_sample_num), self.opacity.nu)
