@@ -87,11 +87,14 @@
   - [x] 允许 sigma_abs 空着，默认取 ext 的值
   - [x] 处理 sigma_H_V 的指定
   - [x] 从 A / A_V 曲线转换为 opacity law：`from_extinction_data`、`from_extinction_model`
-
-- [ ] 数值积分的处理
-  - [ ] `trapz_log` 真的比 `trpz` 更好吗？？？
-  - [ ] 对于很粗略的 SED，中间部分应该假设如何插值？
-  - [ ] 原理问题
+- [x] 数值积分的处理
+  - [ ] `trapz_log` 真的比 `trapz` 更好吗？？？
+    - [x] 在采样点很稀疏时（`r_sample_num=10`）有点区别，但正常采样数（>100）没区别
+  - [x] 对于很粗略的 SED，中间部分应该假设如何插值？
+    - [x] Kohei 觉得用 LogLog 插值比较好
+  - [x] 对比：尝试用插值得更精细的 observed SED 喂给 A_V_Model，看看有何不同
+    - [x] 差别很小
+  - [ ] *原理问题*
     - [ ] 搞清楚数值积分的「采样」和「rule」之间的区别与联系
     - [ ] `trapz_log` 的本质意义
       - [ ]  $\int y x \, {\rm d}\log(x)$ ，相当于在 $(\log(x), yx)$ 上的梯形法则？
@@ -106,7 +109,11 @@
 
 
 - [x] 解决 nu 和 wavelength 升降序造成积分带负号的问题
-- [ ] **nu_array 应该用 opacity 的还是 SED 的？**
+- [x] nu_array 应该用 opacity 的还是 SED 的？
+
+  - [x] 用 SED 的，因为 SED 的 nu 范围更小一些
+  - [x] 可以在传入 SED 时通过新写的 `refine` 方法细化，保证精度足够。不过其实差别很小
+
 - [x] 为什么我跑了一下，和政融的 T_out 不一致？
 - [x] 能量守恒问题
   - [x] 把 A_V 对应吸收的总能量、IR 发射的总能量都算出来，作为参考
