@@ -8,7 +8,7 @@ from astropy.units import Quantity
 
 from .model_base import Planck_B_nu
 
-from .utils import LogLogInterpolator, trapz_log, quad_vec_log, quad_vec_unit, quantity_to_latex
+from .utils import LogLogInterpolator, trapz_log, quad_vec_log, quad_vec_unit, trapz_mapping, quantity_to_latex
 from .opacity import OpacityData
 from .incident_SED import SED
 from .model_base import LRD_IR_ModelBase
@@ -95,7 +95,7 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         def integrand(nu: Quantity['frequency'], T: Quantity['temperature']) -> Quantity[u.erg / u.s / u.Hz]:
             return self.opacity.interp_abs(nu) * Planck_B_nu(nu, T)
 
-        method: str = self.config['IR_Flux.integrator']
+        method: str = self.config['IR_Flux.integrator']  # 这里用 trapz 或 trapz_log 区别很小。因为 nu_array 来自 opacity，足够密集。
         if method == 'quad':  # 这个方法默认情况下会给出 0 值，可能是因为自适应算法没有注意到峰的位置。
             flux = quad_vec_unit(lambda nu: integrand(nu, T), nu_array.min(), nu_array.max())[0]
         elif method == 'quad_log':  #! 似乎是接近准确的，但非常慢 (单个计算 1min)
@@ -179,6 +179,10 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
 
 class OrionLRDModel(SemiOrionLRDModel):
     
+    config = SemiOrionLRDModel.config | {  # 从父类的 config 上拓展
+        'UV_Flux.integrator': 'trapz_log',  # UV_Flux 的积分方法
+    }
+    
     @u.quantity_input
     def __init__(
         self,
@@ -209,17 +213,17 @@ class OrionLRDModel(SemiOrionLRDModel):
         r 是 Quantity。其形状可以是 scalar or 一维数组，返回值与其形状一致。
         tau 要么是一个 scalar，要么是一个二维数组，其形状 = (len(nu_array), len(r))
         """
-        #TODO 整理，写注释
         r_arr = r[..., None]  # 在 r 的最后一个 axis 上添加一个维度。如果 r 是标量则转化为一维数组，r 是以为数组则转化为二维数组。
         
         incident_SED = self.incident_SED
-        nu_array = incident_SED.nu
+        nu_array = incident_SED.nu  # 采用 incident_SED 的 nu，因为它的范围比 opacity 更窄。#* 如果担心采样点不够密集，应当在传入时调用 SED.refine 方法。
         sigma_H = self.opacity.interp_abs(nu_array)
         
         if tau is None:
             tau = self.tau_nu_profile(nu_array, r_arr)  # tau 的形状：第 0 轴上和 nu_array 一样长，第 1 轴上和 r_arr 一样长
             
-        integral = trapz_log(incident_SED.L_nu * sigma_H * np.exp(-tau), nu_array)
+        integrator = trapz_mapping[self.config['UV_Flux.integrator']]
+        integral = integrator(incident_SED.L_nu * sigma_H * np.exp(-tau), nu_array)
         
         return integral / (4*np.pi * r**2)
     
@@ -231,8 +235,8 @@ class OrionLRDModel(SemiOrionLRDModel):
         当 tau_ph 设为 0 时，r_ph == r_in，回退到没有 feedback 的情况。  
         r 可以是标量，或者 numpy 数组。返回值与其形状一致。
         """
-        r_arr = r[..., None]  # 在 r 的最后一个 axis 上添加一个维度。如果 r 是标量则转化为一维数组，r 是以为数组则转化为二维数组。
-        nu_array = self.incident_SED.nu
+        r_arr: Quantity = r[..., None]             # 在 r 的最后一个 axis 上添加一个维度。如果 r 是标量则转化为一维数组，r 是以为数组则转化为二维数组。
+        nu_array: Quantity = self.incident_SED.nu  # 与 UV_Flux 中使用的 nu_array 保持一致，这样 tau 的形状才能一致。
         tau = self.tau_nu_profile(nu_array, r_arr)
         # 处理 feedback 造成的效应：将 1/4πr^2 中的 r 使用 feedback 调整后的值，而 tau 则使用原有的 r。相当于只在 r<r_ph 的地方把 1/4πr^2 中的 r 替换为 r_ph。
         return self.UV_Flux(self.r_with_feedback(r), tau=tau)
@@ -240,13 +244,18 @@ class OrionLRDModel(SemiOrionLRDModel):
     @override
     @u.quantity_input
     def _calc_r_in(self) -> Quantity[u.pc]:
+        """计算 r_in。  
+        来自于在 r == r_in 处的能量平衡 UV_Flux == IR_Flux，而 UV_Flux 由于 tau == 0 所以随 r 是平方反比的，可以直接从中解出 r_in 的值。  
+        目前是仿照 UV_Flux 单独写了一遍。也许可以改为调用 UV_Flux 方法，从而确保一致性。
+        """
         IR_Flux = self.IR_Flux(self.T_sub)
         
         incident_SED = self.incident_SED
         nu_array = incident_SED.nu
         sigma_H = self.opacity.interp_abs(nu_array)
         
-        integral = trapz_log(incident_SED.L_nu * sigma_H, nu_array)
+        integrator = trapz_mapping[self.config['UV_Flux.integrator']]
+        integral = integrator(incident_SED.L_nu * sigma_H, nu_array)
         
         return np.sqrt(integral / (4 * np.pi * IR_Flux))
     

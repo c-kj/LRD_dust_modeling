@@ -19,6 +19,9 @@ class SED:
     from_file 方法用于从文件中读取。对文件格式有特定的要求，见该方法的 docstring。
     """
     
+    # 类属性
+    interpolator = LogLogInterpolator  # 各个 interp_* 方法所调用的插值器。默认使用 Log-Log scale 下的插值，因为这样可以使得 (nu, L_nu), (nu, nu_L_nu) 和 (nu, L_lambda) 三者的插值结果一致。
+    
     @u.quantity_input
     def __init__(self, *, 
                  nu: Quantity['frequency'], 
@@ -51,15 +54,30 @@ class SED:
     # 目前不缓存它们，因为调用次数不多。这样可以避免更改时缓存不更新的潜在问题。
     @property
     def interp_L_nu(self):
-        return LogLogInterpolator(self.nu, self.L_nu)
+        return self.interpolator(self.nu, self.L_nu)
     
     @property
     def interp_nu_L_nu(self):
-        return LogLogInterpolator(self.nu, self.nu_L_nu)
+        return self.interpolator(self.nu, self.nu_L_nu)
     
     @property
     def interp_L_lambda(self):
-        return LogLogInterpolator(self.nu, self.L_lambda)
+        return self.interpolator(self.nu, self.L_lambda)
+    
+    
+    def refine(self, num: int = 0, *, keep_original: bool = True) -> Self:
+        """对 SED 进行插值，返回新的 SED 对象。  
+        num: 插值新增的点数。  
+        keep_original: 是否保留原始的数据点。默认为 True（从而不丢失「尖峰」）。  
+        如果 keep_original，则去掉插值的首尾两个点，避免与原数据重复。
+        """
+        nu = np.geomspace(self.nu.min(), self.nu.max(), num)
+        L_nu = self.interp_L_nu(nu)
+        if keep_original:
+            # 将新插值点与原数据点合并。去掉首尾两个点以避免二者重复。
+            nu = np.concatenate([nu[1:-1], self.nu])
+            L_nu = np.concatenate([L_nu[1:-1], self.L_nu])
+        return self.__class__(nu=nu, L_nu=L_nu)  # 无需按顺序排列，在 __init__ 中会自动排序。
     
     
     #TODO 把 bolometric correction 作为可选项，参数可以传入
@@ -86,7 +104,7 @@ class SED:
         nu_1450AA =  (1450 * u.AA).to(u.Hz, u.spectral())  # 1450 Angstrom 对应的频率
         NormalizedFactorAt1450 = L_bol / f_bol_UV / nu_1450AA
         
-        L_nu: Quantity[u.erg/u.s/u.Hz] = L_nu / LogLogInterpolator(wavelength, L_nu)(1450 * u.AA) * NormalizedFactorAt1450  # 归一化后，L_nu 在 1450 Angstrom 处的值为 NormalizedFactorAt1450
+        L_nu: Quantity[u.erg/u.s/u.Hz] = L_nu / cls.interpolator(wavelength, L_nu)(1450 * u.AA) * NormalizedFactorAt1450  # 归一化后，L_nu 在 1450 Angstrom 处的值为 NormalizedFactorAt1450
         
         return cls(nu=nu, L_nu=L_nu)
 

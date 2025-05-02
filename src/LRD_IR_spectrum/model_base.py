@@ -9,7 +9,7 @@ import astropy.units as u
 import astropy.constants as const
 from astropy.units import Quantity
 
-from .utils import trapz_log, quad_vec_log, quad_vec_unit, quantity_to_latex
+from .utils import trapz_log, quad_mapping, trapz_mapping, quantity_to_latex
 from .opacity import OpacityData
 
 class R_out_Error(Exception):
@@ -248,18 +248,14 @@ class LRD_IR_ModelBase(ABC):
 
         #* 主要是采样方式 (log / linear) 对积分的收敛性影响较大。积分是用 trapz 还是 trapz_log 影响较小。
         L_nu_integrator: str = self.config['calc_L_nu.integrator']
-        if L_nu_integrator == 'quad':
-            L_nu = quad_vec_unit(lambda r: integrand(nu_array, r), self.r_in, self.r_out)[0]
-        elif L_nu_integrator == 'quad_log':
-            L_nu = quad_vec_log(lambda r: integrand(nu_array, r), self.r_in, self.r_out)[0]
-        elif L_nu_integrator == 'trapz':
-            r_array = self.get_r_array(r_sample_num=r_sample_num, r_sample_scale='linear')  # 实际上，linspace 采样是很不合适的，收敛性很差。#FUTURE 可以考虑改为使用 get_r_array 的默认值，从 config 中选择 scale。
+        if L_nu_integrator in {'quad', 'quad_log'}:  # 从函数计算积分（自适应）
+            integrator = quad_mapping[L_nu_integrator]  # 挑选对应的积分器
+            L_nu = integrator(lambda r: integrand(nu_array, r), self.r_in, self.r_out)[0]
+        elif L_nu_integrator in {'trapz', 'trapz_log'}:  # 从采样点计算积分
+            integrator = trapz_mapping[L_nu_integrator]  # 挑选对应的积分器
+            r_array = self.get_r_array(r_sample_num=r_sample_num)  # 对 r 采样。r_sample_scale 需要从 config 中指定。
             integrand_array = integrand(nu_array[:, None], r_array)
-            L_nu = integrate.trapezoid(integrand_array, r_array)
-        elif L_nu_integrator == 'trapz_log':
-            r_array = self.get_r_array(r_sample_num=r_sample_num)  # sample in log scale
-            integrand_array = integrand(nu_array[:, None], r_array)
-            L_nu = trapz_log(integrand_array, r_array)
+            L_nu = integrator(integrand_array, r_array)
         else:
             raise ValueError(f"method {L_nu_integrator = } is invalid! ")
 

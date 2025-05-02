@@ -87,6 +87,12 @@ class ScaledInterpolator:
         return __class__(self.y, self.x, scale_x=(self.f_y, self.inv_f_y), scale_y=(self.f_x, self.inv_f_x), **self.kwargs)
 
 
+class LinearInterpolator(ScaledInterpolator):
+    """线性尺度下插值。"""
+    def __init__(self, x, y, **kwargs):
+        _identity = self._identity
+        super().__init__(x, y, scale_x=(_identity, _identity), scale_y=(_identity, _identity), **kwargs)
+
 class LogLogInterpolator(ScaledInterpolator):
     """以 log-log 尺度插值。
     
@@ -171,6 +177,15 @@ def quad_vec_log(f, a, b, *args, **kwargs):
         return f(x) * x
     return integrate.quad_vec(integrand, np.log(a), np.log(b), *args, **kwargs)
 
+# 用于选择积分方法的字典
+quad_mapping: dict[str, Callable] = {
+    'quad': quad_vec_unit,
+    'quad_log': quad_vec_log,
+}
+trapz_mapping: dict[str, Callable] = {
+    'trapz': integrate.trapezoid,
+    'trapz_log': trapz_log,
+}
 
 
 # 用于格式的 utils
