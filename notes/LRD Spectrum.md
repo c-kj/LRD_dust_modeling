@@ -18,7 +18,6 @@
 
 - PSF ~ rou < 600-800 pc (这是 F444W, 针对恒星的，而非 dust)
 
-
 ## A_V constraint Project
 
 - 模型中的不同可选项
@@ -27,6 +26,46 @@
   - $(n_0, \gamma)$ 
   - 不同的观测到的 LRD 源
   - ……
+
+### 参数空间上，对 $A_V$ 的限制
+
+#### re-emission 被 SED 观测数据限制
+
+从 0 增大 A_V，直到违反观测 SED 数据点
+
+#### CMB T_floor 的限制
+
+实际上是 $r_{\rm out}$ 不能太大。尤其在 $\gamma $ 接近 1 的情况下，或者 $n_0$ 很小的情况，容易出现很大的 $r_{\rm out}$ 
+
+考虑 T_floor 也许能限制 $r_{\rm out}$ 的大小，因为如果 $r_{\rm out}$ 太大了，就会违反 ALMA 观测
+
+#### 来自 $M_{\rm dust}$ 的限制
+
+Stellar mass 最大 ~ $10^9 M_\odot $ （再大就应该能被观测到了）。假设一个 stellar-to-dust ratio 在 1e3 - 1e4 之间，给出 dust mass 的上限 $\max( M_{\rm dust}) \sim 10^6 M_\odot$ 。再假设一个 gas-to-dust ratio ~ 1e2，则 $\max(M_{\rm gas}) \sim 10^8 M_\odot$  
+$$
+M_{\rm gas} = m_H \int_{r_{\rm in}}^{r_{\rm out}} n(r) 4\pi r^2 {\rm d}r \\
+= m_H n_0 ~ 4 \pi r_{\rm in}^3 ~ \frac{(r_{\rm out} / r_{\rm in})^{3-\gamma} - 1}{3-\gamma}
+$$
+对于确定的 $(n_0, \gamma)$ ，由指定的 max $M_{\rm gas}$ 可以给出 $r_{\rm out}$  的上限，从而给出 $A_V$ 的上限
+
+#### 来自 $N_H$ max 的限制
+
+$$
+N_H = A_V / 1.086 /  \sigma_V^{\rm ext} \\
+$$
+
+$$
+N_H(r) = \int_{r_\mathrm{in}}^{r} n(r') {\rm d}r' = n_0 r_\mathrm{in} \frac{1-(r/r_\mathrm{in})^{-(\gamma-1)}}{\gamma-1}
+$$
+
+当 $\gamma > 1$ 时，$ \lim_{r_{\rm out} \to \infty} N_H(r_{\rm out}) = n_0 r_\mathrm{in} / (\gamma-1) $ 
+
+也就是说，对于  $\gamma > 1$ ，有一个限制来自于 $N_H$ 不可能太高
+
+### 各张图
+
+波长范围：rest-frame 1e-1 ~ 2e2 um 。如果需要 FUV、ALMA（考虑不同红移），可能需要适当再宽一点
+
 
 
 ## 算法描述
@@ -94,7 +133,7 @@ $$
 
 其中，
 $$
-F_{\nu, \mathrm{incident}} = L_{\nu, \mathrm{AGN}} \cdot \frac{\mathrm{e}^{-\tau_\nu (r)}}{4 \pi r^2} 
+F_{\nu, \mathrm{incident}} = L_{\nu, \mathrm{AGN}} \cdot \frac{\mathrm{e}^{-\tau_\nu (r)}}{4 \pi r^2}
 $$
 
 $$
@@ -112,18 +151,29 @@ $$
 
 ### 关于运算速度
 
-- 根据 line profiler 和 viztracer 的结果，计算 `model.calc_L_nu()` 耗时的大头在计算 T profile 上，当然，这取决于 r 和 nu 各用了多少个 sample 来算。`trapz_log` 的开销并不很大。
+- 根据 line profiler 和 viztracer 的结果，计算 `model.calc_L_nu()` 耗时的大头在计算 T profile 上，当然，这取决于 r 和 nu 各用了多少个 sample 来算。`trapz_log` 的开销并不很大。
 - `@u.quantity_input` 的运行时检查开销似乎并不占大头。替换成一个啥也不干的装饰器，或者全部注释掉，速度几乎无差别。
 - 使用 Unit 计算，相比于以前版本用纯 numpy 计算，略微慢了些（350ms -> 450ms）
 - 可以关掉 numpy 的 warning 来（略微）提速：`np.seterr(all='ignore')` 
-- 对于之前的 fiducial 选择（OrionLRD data, 9244 个 nu）， `r_sample_num=1000` ，单个 `calc_L_nu` 耗时大约 500ms
+- 对于之前的 fiducial 选择（OrionLRD data, 9244 个 nu）， `r_sample_num=1000` ，单个 `calc_L_nu` 耗时大约 500ms
+
+#### paras survey
+
+- 单个 calc_nu_L_nu 对使用的 nu 和 r 采样点数不是很敏感，耗时总是 ~ 0.2s
+- brentq 求根大概 ~12 次函数调用收敛，耗时 ~ 2s。精度要求低的话略少，但不很敏感（因为 $O(\log(1/\Delta A_V))$
+- 100 个点 
+  - 直接暴力循环，~ 190s
+  - 14cpu, loky, 1.6 or 1.8min？
+  - 10cpu, loky/multiprocessing, 45s
+  - 10cpu, threading, 60s
+- 
 
 ### 与 2024 paper 中李政融使用的代码比较
 
 - 实现：
   - 政融自己实现的 `calc_L_nu_photon` 函数。使用的计算方法与我文章中描述的相同，但采用了 magic number 以及 $e^{1/5.6}$ 的近似。
     - 在短波部分造成一点小的偏差
-  - 在 `calc_L_nu_photon` 函数中，政融手动添加了 normalization，把 $\int L_\nu \mathrm{d}\nu$ 直接归一化到  L_UV （同时也自然从 pc^3 放大到了以 cm^3 为单位）。这其实不太合理，不该用 L_UV。
+  - 在 `calc_L_nu_photon` 函数中，政融手动添加了 normalization，把 $\int L_\nu \mathrm{d}\nu$ 直接归一化到  L_UV （同时也自然从 pc^3 放大到了以 cm^3 为单位）。这其实不太合理，不该用 L_UV。
   - IncidentSED 中不再使用 bolometric correction？直接在数据文件中算好了吗？
 - 政融采用了 T_floor = 10，而我目前设为 0 。这导致 gamma 接近 1 时多出来很多能量（当然这是非物理的）
 - 数据：

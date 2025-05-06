@@ -1,0 +1,68 @@
+---
+query: "#folder:LRD_IR_spectrum  请根据这个python 包中的内容，为我生成其各个模块之间的 import 关系图，以及类继承图。用
+  mermaid 语法输出"
+references:
+  - "File: /src/LRD_IR_spectrum"
+  - "File: /.github/git_commit_message.txt"
+generationTime: 2025-05-06T12:00:04.981Z
+---
+classDiagram
+    class LRD_IR_ModelBase {
+        +_calc_r_in()
+        +T_dust_profile()
+    }
+    class EnergyBalanceModel {
+        +UV_Flux()
+        +UV_Flux_with_feedback()
+    }
+    class OrionLRDModel {
+        +tau_nu_profile()
+        +UV_Flux()
+        +UV_Flux_with_feedback()
+    }
+    class L_UV_Model {
+        +UV_Flux()
+        +UV_Flux_with_feedback()
+    }
+    class B87Model {
+        +Q_nu_abs()
+        +T_dust_B87()
+    }
+    class A_V_Model {
+        +calc_L_from_extinction()
+    }
+    class OpacityData {
+        +interp_ext()
+        +interp_abs()
+        +interp_Prad()
+    }
+    class SED {
+        +interp_L_nu()
+        +interp_nu_L_nu()
+        +interp_L_lambda()
+    }
+    class LogLogInterpolator {
+        +__call__()
+        +inverse()
+    }
+    class LinearInterpolator {
+        +__call__()
+        +inverse()
+    }
+    class ScaledInterpolator {
+        +__call__()
+        +inverse()
+    }
+    class R_out_Error {
+    }
+    class IPyChainMap {
+        +_ipython_key_completions_()
+    }
+
+    LRD_IR_ModelBase <|-- EnergyBalanceModel
+    EnergyBalanceModel <|-- OrionLRDModel
+    EnergyBalanceModel <|-- L_UV_Model
+    LRD_IR_ModelBase <|-- B87Model
+    OrionLRDModel <|-- A_V_Model
+    ScaledInterpolator <|-- LogLogInterpolator
+    ScaledInterpolator <|-- LinearInterpolator

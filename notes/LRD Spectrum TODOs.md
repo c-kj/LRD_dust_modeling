@@ -8,9 +8,30 @@
 - [ ] 画出  $n_0, \gamma$ 参数空间图上的图
 - [ ] 记录周二和 Kohei 聊的内容，关于项目的目标、讨论部分
 
+
+
+## 写论文
+
+- [x] Introduction 部分（交给政融）
+- [ ] 写 Method 部分
+  - [ ] 模型描述
+    - [ ] Foward Modelling
+    - [ ] A_V limit
+  - [ ] 选取的 opacity law
+- [ ] 出图：
+  - [ ] Fig 1 opacity laws
+  - [ ] Fig 2 几个典型 SED
+  - [ ] Fig 3 参数空间图
+  - [ ] Fig 4 ？？？随 A_V 的变化？
+- [ ] 对着图解释（Sec 3）
+
 ## 科学问题
 
-- [ ] **Feedback 的正确处理**
+
+
+## 模型的构建
+
+- [ ] Feedback 的正确处理
 
   - [ ] 尤其是在 A_V 小的时候（tau_UV < 1，不存在 tau_UV = 1 的点）
   - [ ] 总光深 < 1 怎么处理？
@@ -23,16 +44,21 @@
     - [x] 之前是取 截面最大值。这对于更广泛的 opacity law 并不合适。
     - [x] 取 rad pressure cross 对 incident L_nu 平均的值作为截面，然后拿这个截面算 tau_UV
       - [x] Draine 2011 书上 23.10.1 节可以作为参考
-- [ ] **换不同的 opacity law**
+- [ ] 换不同的 opacity law
   - [x] 加入从政融那里拿到的 .opc 数据。但是波长覆盖范围都太小了，用不了。
   - [ ] 研究 sigma_H_V 的处理
     - [x] 确认 $n_0 \sigma_{H,V}$ 的简并性
     - [ ] 如何处理？能直接给一个差不多的 sigma_H_V 值吗？但这样 n_0 能互相比较吗？
       - [ ] 最好是直接拿到物理模型给出的 $\sigma_H$ 数据，比如从 CLOUDY 中
     - [ ] $\sigma_H$ 是一个合适的量吗？它是各种大小的颗粒的综合效应吗？
-  - [ ] 找到波长覆盖范围合适的几个典型模型
-  - [ ] 与政融给我的模型比较。尤其注意 FUV、UV、Optical、IR 多波段的比较
-  - [ ] **比较不同的 opacity 下的光谱**
+    - [ ] **Orion 的 sigma_H_ext_V 比 ISM 观测值小 13 倍，其中 10 倍是 0.1 solar metalicity 造成的，剩余的怎么解释？**
+  - [x] 找到波长覆盖范围合适的几个典型模型
+  - [x] 与政融给我的模型比较。尤其注意 FUV、UV、Optical、IR 多波段的比较
+  - [x] 比较不同的 opacity 下的光谱
+  - [x] Opacity 中 ext, abs, Prad 的区分
+    - [x] Kohei: 所有 Opacity 统一取 extinction，但在论文里区分 ext，abs，Prad
+    - [x] 统一取 Orion 在 V band 的截面做 normalization，对应于 .1 solar metalicity
+    - [x] 写程序让读取时忽略 scatter
 - [ ] 把 Far UV 的能量加进模型 （政融 working on it）
 - [ ] observed SED 实际上是 消光 与 IR re-emission 的加和！
   - [ ] 这意味着，不能直接把 observed SED 当作 消光后的 SED，否则加上 IR re-emission 后总是会比 observed 高！
@@ -45,7 +71,6 @@
 - [ ] 自吸收问题：近红外处，IR re-emission 也会被后续的 dust 吸收然后再发射！可能需要解辐射转移方程（把 能量平衡方程用于计算下一点处的 B_nu）
   - [ ] 什么条件下可以忽略？
   - [x] 由于 NIR 对能量贡献较小，这里也许也可以忽略？不太确定。
-
 
 ## Coding
 
@@ -115,12 +140,6 @@
       - [ ] 收敛性、收敛阶数与普通的 trapz 一致吗？
       - [ ] 这样做对于 $\log(x)$ 接近均匀的 sample 来说，真的更好吗？
     - [ ] 直接梯形法对于分段线性函数是精确的；trapz_log 对于  $(\log(x), yx)$ 图上的分段直线函数是精确的，但这个要求很古怪。
-
-
-
-
-
-
 - [x] 解决 nu 和 wavelength 升降序造成积分带负号的问题
 - [x] nu_array 应该用 opacity 的还是 SED 的？
 
@@ -137,13 +156,11 @@
       - [x] 但是平滑过渡是合理的吗？是的
       - [x] 如果不平滑过渡，只取 $\tau=0$ ，是否会让能量不守恒？会的
     - [x] 因为积分 $ \int (...) 4\pi r^2 {\rm d}r $ 的时候，忘了把这个 $r^2$ 在 $r < r_{\rm ph}$ 的地方改为 $r_{\rm ph}^2$  ！
-- [ ] **写一个最朴素的 single layer model，用于对比**
+- [ ] 写一个最朴素的 single layer model，用于对比
 - [ ] 潜在的问题：目前各种函数（n_profile, UV_Flux 等）都没有限定 r_in < r < r_out
-- [ ] SED 有部分 L_nu 为 0 的话，能用 LogLog 插值吗？？
+- [ ] SED 有部分 L_nu 为 0 的话，能用 LogLog 插值吗？？不过目前其实没有
 
-
-
-
+## 讨论
 
 ### 要跟政融讨论的事
 
@@ -152,3 +169,26 @@
 - [ ] 如果有函数形式，可以直接给我，不用写成文件
 - [ ] 找政融问问 CLOUDY 能不能给几条 sigma_H 的数据
   - [ ] 如果能给的话，还得区分 ext vs abs，反而还有点麻烦…
+
+### 2025-05-05 跟 Kohei、政融讨论
+
+- [x] feedback 的处理：SED mean，Prad max，no
+- [x] 担心 feedback 下太灵活，A_V 限制不住
+- [ ] idea：用 IR 观测 SED 的能量积分给出一个 very rough 的 A_V 限制
+- [ ] 对于 gamma > 1: NH_max 给出 A_V max？但这个与光谱就无关了
+- [ ] 论文内容
+  - [ ] 图 1：放大？
+    - [ ] 不要 zoom in，宽一点，用 shade 标记吸收和发射区域
+  - [ ] 图 2 画什么？变哪几个参数？
+    - [ ] panel a: 给定 (n0, gamma)，变动 A_V，求接触点
+    - [ ] panel b: 变动 n_0, gamma，每个都恰好碰到观测点
+    - [ ] 用颜色表示 A_V ？跟 paras survey plot 一致！
+  - [ ] 图 3 paras survey：
+    - [ ] 排除右下角：size 限制？
+      - [ ] 试试用 T_CMB
+    - [ ] 用颜色代表不同波长观测的限制、M_dust 的限制
+    - [ ] 几张图？分别展示 feedback on/off ，还是 opacity law？
+      - [ ] 2 panels，opacity law SMC vs Orion
+
+- [ ] M_dust 的限制：可以直接解析计算
+  - [ ] 用 M_dust 限制 r_out 后，再计算 re-emission ，能否给出更严格的 A_V 限制？

@@ -1,0 +1,31 @@
+---
+query: "#folder:LRD_IR_spectrum  请根据这个python 包中的内容，为我生成其各个模块之间的 import 关系图，以及类继承图。用
+  mermaid 语法输出"
+references:
+  - "File: /src/LRD_IR_spectrum"
+  - "File: /.github/git_commit_message.txt"
+generationTime: 2025-05-06T12:00:04.976Z
+---
+flowchart LR
+    A[__init__.py] --> B[opacity.py]
+    A --> C[incident_SED.py]
+    A --> D[model_base.py]
+    A --> E[Barvainis_1987.py]
+    A --> F[OrionLRD.py]
+    A --> G[A_V_model.py]
+    A --> H[utils.py]
+    A --> I[reload.py]
+    A --> J[plot_utils.py]
+    B --> H
+    C --> H
+    D --> H
+    E --> D
+    E --> H
+    F --> D
+    F --> H
+    F --> B
+    F --> C
+    G --> B
+    G --> C
+    G --> F
+    G --> H
