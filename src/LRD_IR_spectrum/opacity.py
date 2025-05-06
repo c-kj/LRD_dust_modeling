@@ -16,20 +16,16 @@ class OpacityData:
     
     #! 注意：此类的对象不应在创建后修改其数据，否则缓存的 interpolator 将与更新后的数据不一致。
     
-    Init parameters (keyword-only)：
-    - nu: 频率数组
-    - sigma_H_ext, sigma_H_abs: 与 nu 对应的 extinction & absorption cross section per H
-    - filename: Optional, 用于记录数据来源的文件名。
-    
-    Alternative constructor:
+    Constructor:
+    - `__init__`: 从数据创建 OpacityData 对象。详见其 docstring。
     - `from_file`: 从文件中读取数据，创建 OpacityData 对象。
     - `from_extinction_data`: 从 extinction data 创建 OpacityData 对象。
     - `from_extinction_model`: 从 dust_extinction 包所提供的 extinction model，创建 OpacityData 对象。
     
-    Other API:
-    - `energy, wavelength` : nu 数组的等价表示
-    - `nu_cgs` : nu in Hz, for convenience
-    - `interp_ext, interp_abs` : interpolators for the opacity data
+    API:
+    - `nu, wavelength, energy` : 横轴，nu 数组的等价表示
+    - `sigma_H_ext, sigma_H_abs, sigma_H_Prad` : extinction/absorption/radiation-pressure cross section per H
+    - `interp_ext, interp_abs, interp_Prad` : interpolators for the opacity data
     
     
     Usage:
@@ -44,6 +40,15 @@ class OpacityData:
                  sigma_H_ext: Quantity['area'], 
                  sigma_H_abs: Quantity['area'] | None = None, 
                  filename: str | None = None,):
+        """从数据创建 OpacityData 对象。  
+        
+        Init parameters (keyword-only)：
+        - nu: 频率数组
+        - sigma_H_ext, sigma_H_abs: 与 nu 对应的 extinction/absorption cross section per H
+            - sigma_H_abs 如果为 None（默认），则与 sigma_H_ext 相同。
+        - filename: Optional, 用于记录数据来源的文件名。
+        """
+        
         self.filename = filename
         
         # 按照频率升序排列数据
@@ -53,9 +58,14 @@ class OpacityData:
         self.sigma_H_abs = sigma_H_abs[indices] if sigma_H_abs is not None else self.sigma_H_ext  # 如果没有提供 absorption cross section，则默认与 extinction cross section 相同。
         
     def __eq__(self, other):
-        return np.all(self.nu == other.nu) \
-            and np.all(self.sigma_H_ext == other.sigma_H_ext) \
-            and np.all(self.sigma_H_abs == other.sigma_H_abs)
+        try:
+            return bool(np.all(self.nu == other.nu)
+                and np.all(self.sigma_H_ext == other.sigma_H_ext)
+                and np.all(self.sigma_H_abs == other.sigma_H_abs))
+        except AttributeError:  # other 不具有要求的属性
+            return False
+        except ValueError:  # 长度不一致引起的
+            return False
     
     
     @property
@@ -66,9 +76,6 @@ class OpacityData:
     def energy(self):
         return self.nu.to(u.Ry, equivalencies=u.spectral())
     
-    @property
-    def nu_cgs(self):
-        return self.nu.to_value(u.Hz)
     
     @property
     def sigma_H_Prad(self) -> Quantity['area']:
@@ -102,7 +109,7 @@ class OpacityData:
         return self.interp_ext(nu_V)
     
     @classmethod
-    def from_file(cls, filename: str | Path, factor: float = 1.0) -> Self:
+    def from_file(cls, filename: str | Path, factor: float = 1.0, ignore_scatter: bool = False) -> Self:
         """从 CLOUDY output file 中读取数据，从而创建 OpacityData 对象。
         文件格式要求为：第一列为 nu (Rydberg)，第二列为 sigma_H_ext (cm^2)，第三列为 sigma_H_abs (cm^2)。
         """
@@ -112,7 +119,11 @@ class OpacityData:
         energy = data[:, 0] * u.Ry  # in [Rydberg]
         nu = energy.to(u.Hz, equivalencies=u.spectral())
         sigma_H_ext = factor * data[:, 1] * u.cm**2
-        sigma_H_abs = factor * data[:, 2] * u.cm**2
+        
+        if ignore_scatter:
+            sigma_H_abs = None  # 向 __init__ 传入 None 表示取 absorption 与 extinction 截面相同
+        else:
+            sigma_H_abs = factor * data[:, 2] * u.cm**2
         
         return cls(filename=filename, nu=nu, sigma_H_ext=sigma_H_ext, sigma_H_abs=sigma_H_abs)
     
@@ -131,7 +142,7 @@ class OpacityData:
         nu = x.to(u.Hz, equivalencies=u.spectral())
         sigma_H_ext = A_rel * sigma_H_V
 
-        return cls(nu=nu, sigma_H_ext=sigma_H_ext)
+        return cls(nu=nu, sigma_H_ext=sigma_H_ext)  # 由于 extinction data 只有 extinction 截面，所以只能认为 absorption == extinction，即忽略 scattering 截面。
         
     @classmethod
     @u.quantity_input(equivalencies=u.spectral())
