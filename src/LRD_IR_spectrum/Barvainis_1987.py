@@ -26,6 +26,20 @@ class B87Model(LRD_IR_ModelBase):
     beta = 1.6  # IR 波段 Q_nu 对 nu 的幂指数。
     q_ir = 1.4e-24  # 来自 B87 paper。是无量纲数，相当于 nu = 1 Hz 对应的 Q_nu （虽然这个 power-law 并不延伸到那么远）
     
+    @u.quantity_input
+    def __init__(
+        self, 
+        *,  # 以下参数必须用关键字指定
+        n_0: Quantity['number density'],
+        gamma: float,
+        L_UV: Quantity['power'],  # UV 波段的功率
+        T_sub: Quantity['temperature'],
+        NH_target: Quantity['column density'] | None,
+        opacity: OpacityData,
+        config: dict = {},  # 注意 config 的默认值是可变的，不要修改它！
+    ):
+        self.L_UV = L_UV
+        super().__init__(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, config=config)
     
     def Q_nu_abs(self, nu: Quantity['frequency']) -> np.ndarray:
         """B87 文章中 Q_nu 的近似公式：Q_nu = q_ir * nu_cgs**beta"""
@@ -34,8 +48,8 @@ class B87Model(LRD_IR_ModelBase):
 
     @staticmethod
     @u.quantity_input
-    def r_in_B87(L_UV_cgs: Quantity['power'], T_sub: Quantity['temperature']) -> Quantity[u.pc]:
-        L_46: float = L_UV_cgs.to_value(1e46 * u.erg / u.s)
+    def r_in_B87(L_UV: Quantity['power'], T_sub: Quantity['temperature']) -> Quantity[u.pc]:
+        L_46: float = L_UV.to_value(1e46 * u.erg / u.s)
         T_1500 = T_sub / (1500 * u.K)
         #FUTURE 这里的 -2.8 这个数字应该来自 beta 的值！需要推导
         return 1.3 * u.pc * L_46**(1/2) * T_1500**(-2.8)

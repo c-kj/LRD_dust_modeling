@@ -73,12 +73,15 @@ def de_redden_SED(*, observed_SED: SED, A_V: MagnitudeLike, opacity: OpacityData
 
 
 class A_V_Model(OrionLRDModel):
+    """根据指定的 A_V，从 observed_SED 还原出 incident_SED，并计算相应的 NH_target 的模型。  
+    用于从观测数据限制 A_V 的上限。    
+    """
     
     @u.quantity_input
     def __init__(self,
+        *,  # 以下参数必须用关键字指定
         n_0: Quantity['number density'],
         gamma: float,
-        *,  # 以下参数必须用关键字指定
         T_sub: Quantity['temperature'],
         A_V: MagnitudeLike,
         opacity: OpacityData,
@@ -113,7 +116,6 @@ class A_V_Model(OrionLRDModel):
     @u.quantity_input
     def calc_L_from_extinction(self) -> Quantity[u.erg / u.s]:
         """根据消光前后的 de-reddened SED vs observed SED 计算吸收总功率"""
-        #! 这里用 SED 的 nu 可能太粗糙了！也许插值更好
         # 红外 SED 数据点比较稀疏，不论是用 trapz_log 还是如何插值采样，都会有较大不确定性。但因为红外部分消光很弱，所以这部分的差距其实不显著。
         nu_array = self.incident_SED.nu
         return trapz_log(self.incident_SED.L_nu - self.observed_SED.L_nu, nu_array)

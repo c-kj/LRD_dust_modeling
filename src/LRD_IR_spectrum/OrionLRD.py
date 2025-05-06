@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from functools import partial
 from typing import override
 
@@ -14,12 +15,20 @@ from .incident_SED import SED
 from .model_base import LRD_IR_ModelBase
 
 
-# Orion_opacity = OpacityData('data/Orion_Tdust20_Sigma_23_Thickness_16_Hden_07.opc')
-
-#TODO: 类的名字重新起，加注释解释这个 model 的核心原理
-#FUTURE 这个 SemiOrionLRDModel 有点像个半成品。回头考虑一下有没有意义，要不要删去。
-class SemiOrionLRDModel(LRD_IR_ModelBase):
-    """IR 出射按照具体的 opacity 计算，而 UV 入射仍是直接给定 L_UV"""
+class EnergyBalanceModel(LRD_IR_ModelBase):
+    """根据 吸收-再发射能量平衡 计算 T_dust_profile 的模型。并考虑 feedback 效应。  
+    
+    抽象方法：
+    - UV_Flux 的计算 (w/o feedback)
+    - sigma_H_Prad_eff 的计算
+    
+    具体实现了：
+    - r_ph 的计算（使用 等效辐射压截面 sigma_H_Prad_eff），用于计算 feedback 效应的影响
+    - IR_Flux 的计算（都是根据黑体谱 & opacity 积分，很统一）
+    - 根据 UV_Flux == IR_Flux 计算 T_dust_profile 的方法（反插表 or brentq）
+    - 其他工具方法：
+        - 用于检验 UV_Flux 和 IR_Flux 总功率的方法
+    """
     
     config = LRD_IR_ModelBase.config | {  # 从父类的 config 上拓展
         'IR_Flux.integrator': 'trapz_log',  # IR_Flux 的积分方法
@@ -30,59 +39,50 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
     @u.quantity_input
     def __init__(
         self,
+        *,   # 以下参数必须用关键字指定
         n_0: Quantity['number density'],
         gamma: float,
-        *,   # 以下参数必须用关键字指定
-        L_UV: Quantity['power'] | None,
         T_sub: Quantity['temperature'],
-        NH_target: Quantity['column density'] | None,
+        NH_target: Quantity['column density'],
         opacity: OpacityData,
         tau_ph: float = 1.0,   # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
         config: dict = {},
     ):
-        #? 近似：UV 波段的 sigma_H 直接取 opacity 的最大值了，这对吗？
-        self.sigma_H_UV_ext = opacity.sigma_H_ext.max()
-        self.sigma_H_UV_abs = opacity.sigma_H_abs.max()
         self.tau_ph = tau_ph
-        super().__init__(n_0=n_0, gamma=gamma, L_UV=L_UV, T_sub=T_sub, NH_target=NH_target, opacity=opacity, config=config)
-
-    @u.quantity_input
-    def tau_UV_profile(self, r: Quantity['length']) -> Quantity['']:
-        """Optical depth profile"""
-        return self.sigma_H_UV_ext * self.NH_profile(r)
+        super().__init__(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, config=config)
     
-    @u.quantity_input
-    def tau_UV_profile_inverse(self, tau: Quantity['']) -> Quantity[u.pc]:
-        """tau_UV_profile 的逆函数。给定tau，返回r。"""
-        NH = tau / self.sigma_H_UV_ext
+    
+    @property
+    @abstractmethod
+    def sigma_H_Prad_eff(self) -> Quantity[u.cm**2]:
+        """等效辐射压截面"""
+        pass
+    
+    def tau_Prad_profile_inverse(self, tau: Quantity['']) -> Quantity[u.pc]:
+        """tau_Prad_profile 的逆函数。给定tau，返回r。用于计算 r_ph。  
+        tau_Prad_profile 是对应于 等效辐射压截面 (sigma_H_Prad_eff) 的光深
+        """
+        NH: Quantity = tau / self.sigma_H_Prad_eff
         r = self.NH_profile_inverse(NH)
         return r
     
     @property
     @u.quantity_input
     def r_ph(self) -> Quantity[u.pc]:
-        #* 这里用的是 UV band 处的 sigma_H。也就是说，求的是 UV band 处 tau == tau_ph 的 r。
-        return self.tau_UV_profile_inverse(self.tau_ph)
-
-    @u.quantity_input
-    def UV_Flux(self, r: Quantity['length'], tau: Quantity[''] = None) -> Quantity[u.erg / u.s]:
-        """计算方程左端的 UV Flux，即尘埃颗粒吸收的能流通量。  
-        r 可以是标量，或者 numpy 数组。返回值与其形状一致。
-        """
-        if tau is None:  #* 允许指定 tau，从而可以设 tau=0 以计算无遮挡的情况，比如计算 r_in、T_ph 时。
-            tau = self.tau_UV_profile(r)
-        return self.L_UV * self.sigma_H_UV_abs * np.exp( -tau ) / (4 * np.pi * r**2) 
+        # 使用 等效辐射压截面 计算 tau，找到 tau == tau_ph 处的 r
+        return self.tau_Prad_profile_inverse(self.tau_ph)
     
+    @override
     @u.quantity_input
-    def UV_Flux_with_feedback(self, r: Quantity['length']) -> Quantity[u.erg / u.s]:
-        """计算方程左端的 UV Flux，即尘埃颗粒吸收的能流通量。考虑 feedback 效应。  
-        目前对 feedback 的近似处理是：假定 feedback 把 dust 扫到 r_ph 处，堆积成一个 thin shell。每个尘埃颗粒所处的光深 tau 不变，只是位置（1/4πr^2 中的 r）变为 r_ph。  
-        当 tau_ph 设为 0 时，r_ph == r_in，回退到没有 feedback 的情况。  
-        r 可以是标量，或者 numpy 数组。返回值与其形状一致。
+    def r_with_feedback(self, r: Quantity['length']) -> Quantity[u.pc]:
+        """考虑 feedback 反馈效果时，从尘埃原位置 r 到新位置 r' 的映射。  
+        类似于流体的 Lagrangian 坐标。  
+        
+        输入：r 是某个尘埃颗粒原先（无反馈）时的位置。  
+        返回：r' 是考虑 feedback 后，尘埃所处的新位置。  
+        r 可以是标量，也可以是数组。返回值与其形状相同。
         """
-        # 处理 feedback 造成的效应：将 1/4πr^2 中的 r 使用 feedback 调整后的值，而 tau 则使用原有的 r。相当于只在 r<r_ph 的地方把 1/4πr^2 中的 r 替换为 r_ph。
-        return self.UV_Flux(self.r_with_feedback(r), tau=self.tau_UV_profile(r))
-    
+        return np.maximum(r, self.r_ph)  # 目前对 feedback 的处理：原先在 r_ph 以内的尘埃都会被扫到 r_ph 处堆积，而其余位置不变。
 
     @u.quantity_input
     def IR_Flux(self, T: Quantity['temperature']) -> Quantity[u.erg / u.s]:
@@ -113,11 +113,13 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
             flux = flux.item()  # 把标量 array 变成标量。同时适用于 array(1) 和 array([])
         return flux
 
-
-    @u.quantity_input
-    def _calc_r_in(self) -> Quantity[u.pc]:
-        IR_Flux = self.IR_Flux(self.T_sub)
-        return np.sqrt(self.L_UV * self.sigma_H_UV_abs / (4 * np.pi * IR_Flux))
+    @abstractmethod
+    def UV_Flux(self, r: Quantity['length'], tau: Quantity[''] = None) -> Quantity[u.erg / u.s]:
+        pass
+    
+    @abstractmethod
+    def UV_Flux_with_feedback(self, r: Quantity['length']) -> Quantity[u.erg / u.s]:
+        pass
     
 
     @u.quantity_input
@@ -176,35 +178,123 @@ class SemiOrionLRDModel(LRD_IR_ModelBase):
         return trapz_log(self.IR_Flux(self.T_dust_profile(r_array)) * self.n_profile(r_array) * 4*np.pi * r_with_feedback**2, r_array)
 
 
-
-class OrionLRDModel(SemiOrionLRDModel):
+class L_UV_Model(EnergyBalanceModel):
+    """UV_Flux 通过 L_UV 直接给出，不考虑入射光谱形状
     
-    config = SemiOrionLRDModel.config | {  # 从父类的 config 上拓展
-        'UV_Flux.integrator': 'trapz_log',  # UV_Flux 的积分方法
-    }
+    将入射光谱看作 UV 波段的常数 or delta function。  
+    相应地使用该波段的等效 opacity 计算 extinction、absorption 和 radiation pressure。
+    """
     
     @u.quantity_input
     def __init__(
         self,
+        *,   # 以下参数必须用关键字指定
         n_0: Quantity['number density'],
         gamma: float,
-        *,  # 以下参数必须用关键字指定
-        L_UV: Quantity['power'] | None = None,  #TODO 这个模型实际上不需要 L_UV 了，可以考虑删去。乃至在基类中删去。
+        L_UV: Quantity['power'],
         T_sub: Quantity['temperature'],
-        NH_target: Quantity['column density'] | None,
+        NH_target: Quantity['column density'],
+        opacity: OpacityData,
+        tau_ph: float = 1.0,   # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
+        config: dict = {},
+    ):
+        #? 近似：UV 波段的 sigma_H 直接取 opacity 的最大值了，这对吗？
+        self.sigma_H_UV_ext = opacity.sigma_H_ext.max()  # 用于 tau_UV_profile 和其逆
+        self.sigma_H_UV_abs = opacity.sigma_H_abs.max()  # 用于 UV_Flux 和 _calc_r_in
+        
+        self.L_UV = L_UV
+        super().__init__(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, tau_ph=tau_ph, config=config)
+    
+    
+    @u.quantity_input
+    def tau_UV_profile(self, r: Quantity['length']) -> Quantity['']:
+        """UV 波段光深作为 r 的函数。
+        用于计算 UV_Flux 中的指数衰减。
+        """
+        return self.sigma_H_UV_ext * self.NH_profile(r)
+    
+    @override
+    @property
+    def sigma_H_Prad_eff(self) -> Quantity[u.cm**2]:
+        """等效辐射压截面"""
+        #* 这里用的是 UV band 处的 sigma_H。也就是说，r_ph 求的是使得 tau_UV_ext(r) == tau_ph 的 r。
+        return self.sigma_H_UV_ext
+
+    @override
+    @u.quantity_input
+    def UV_Flux(self, r: Quantity['length'], tau: Quantity[''] = None) -> Quantity[u.erg / u.s]:
+        """计算方程左端的 UV Flux，即尘埃颗粒吸收的能流通量。  
+        r 可以是标量，或者 numpy 数组。返回值与其形状一致。
+        """
+        if tau is None:  #* 允许指定 tau，从而可以设 tau=0 以计算无遮挡的情况，比如计算 r_in、T_ph 时。
+            tau = self.tau_UV_profile(r)
+        return self.L_UV * self.sigma_H_UV_abs * np.exp( -tau ) / (4 * np.pi * r**2) 
+    
+    @override
+    @u.quantity_input
+    def UV_Flux_with_feedback(self, r: Quantity['length']) -> Quantity[u.erg / u.s]:
+        """计算方程左端的 UV Flux，即尘埃颗粒吸收的能流通量。考虑 feedback 效应。  
+        目前对 feedback 的近似处理是：假定 feedback 把 dust 扫到 r_ph 处，堆积成一个 thin shell。每个尘埃颗粒所处的光深 tau 不变，只是位置（1/4πr^2 中的 r）变为 r_ph。  
+        当 tau_ph 设为 0 时，r_ph == r_in，回退到没有 feedback 的情况。  
+        r 可以是标量，或者 numpy 数组。返回值与其形状一致。
+        """
+        # 处理 feedback 造成的效应：将 1/4πr^2 中的 r 使用 feedback 调整后的值，而 tau 则使用原有的 r。相当于只在 r<r_ph 的地方把 1/4πr^2 中的 r 替换为 r_ph。
+        return self.UV_Flux(self.r_with_feedback(r), tau=self.tau_UV_profile(r))
+    
+    @override
+    @u.quantity_input
+    def _calc_r_in(self) -> Quantity[u.pc]:
+        IR_Flux = self.IR_Flux(self.T_sub)
+        return np.sqrt(self.L_UV * self.sigma_H_UV_abs / (4 * np.pi * IR_Flux))
+
+
+
+class OrionLRDModel(SemiOrionLRDModel):
+    
+    config = SemiOrionLRDModel.config | {  # 从父类的 config 上拓展
+
+
+class OrionLRDModel(EnergyBalanceModel):
+    """使用入射光谱 incident_SED 计算 UV_Flux 并考虑 feedback 效应。
+    
+    区分不同 nu 上的 tau。
+    """
+
+    config = EnergyBalanceModel.config | {  # 从父类的 config 上拓展
+        'UV_Flux.integrator': 'trapz_log',  # UV_Flux 的积分方法
+    }
+
+    @u.quantity_input
+    def __init__(
+        self,
+        *,  # 以下参数必须用关键字指定
+        n_0: Quantity['number density'],
+        gamma: float,
+        T_sub: Quantity['temperature'],
+        NH_target: Quantity['column density'],
         opacity: OpacityData,
         incident_SED: SED,
         tau_ph: float = 1.0,  # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
         config: dict = {},
     ):
         self.incident_SED = incident_SED
-        #* 暂时继承 SemiOrionLRDModel 的 __init__ 方法，从而继承其 tau_UV_profile 所需要的 self.sigma_H_UV_ext
-        super().__init__(n_0=n_0, gamma=gamma, L_UV=L_UV, T_sub=T_sub, NH_target=NH_target, opacity=opacity, tau_ph=tau_ph, config=config)
-        
+        # * 暂时继承 SemiOrionLRDModel 的 __init__ 方法，从而继承其 tau_UV_profile 所需要的 self.sigma_H_UV_ext
+        super().__init__(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, tau_ph=tau_ph, config=config)
+
     @u.quantity_input
     def tau_nu_profile(self, nu: Quantity['frequency'], r: Quantity['length']) -> Quantity['']:
-        """Optical depth profile"""
+        """光深 tau_nu 作为 r 的函数。  
+        用于计算 UV_Flux 中的指数衰减。
+        """
         return self.opacity.interp_ext(nu) * self.NH_profile(r) 
+
+    @override
+    @property
+    def sigma_H_Prad_eff(self) -> Quantity[u.cm**2]:
+        """等效辐射压截面  
+        计算方法由 config['sigma_H_Prad_eff.method'] 控制。
+        """
+        return self.opacity.sigma_H_ext.max()  #TEMP 与之前的处理保持一致，取截面最大值。即将更改为可以使用 incident SED 加权平均
     
     @override
     @u.quantity_input

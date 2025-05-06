@@ -31,6 +31,25 @@ class IPyChainMap(ChainMap):
 
 #FUTURE 重新考虑 抽象基类 该怎么写，最好只提供接口。实现放到 mixin？
 class LRD_IR_ModelBase(ABC):
+    """各个 Model 的抽象基类。  
+    
+    抽象方法：
+    - r_in 的计算（根据 T_sub）
+    - T_dust_profile 的计算
+    
+    具体实现了：
+    - dust 的分布
+        - n_0 和 gamma 参数
+        - r_out 的计算（根据 NH_target）
+        - dust 密度的幂律分布、相应的 NH_profile 和其逆
+    - 指定 opacity
+    - dust re-emission 光谱的计算（根据 T_dust_profile, n_profile 和 opacity 积分）
+    - 其他一些工具
+        - _repr_latex_ 和 __format__
+        - r_with_feedback
+        - check_Luminosity
+        - ...
+    """
     
     # 类属性
     # 类的 config 会被所有实例共享。对其的修改会直接影响所有实例（包括已创建的），因为实例的 config 是 ChainMap。
@@ -43,18 +62,16 @@ class LRD_IR_ModelBase(ABC):
     @u.quantity_input
     def __init__(
         self,
+        *,  # 以下参数必须用关键字指定
         n_0: Quantity['number density'],
         gamma: float,
-        *,  # 以下参数必须用关键字指定
-        L_UV: Quantity['power'] | None,  #FUTURE 考虑是否应该在基类中加入 L_UV。
         T_sub: Quantity['temperature'],
-        NH_target: Quantity['column density'] | None,
+        NH_target: Quantity['column density'],
         opacity: OpacityData,
         config: dict = {},  # 注意 config 的默认值是可变的，不要修改它！
     ):
         self.n_0 = n_0
         self.gamma = gamma
-        self.L_UV = L_UV
         self.T_sub = T_sub
         self.NH_target = NH_target
         self.opacity = opacity
@@ -74,6 +91,7 @@ class LRD_IR_ModelBase(ABC):
         """在 Jupyter Notebook 的单元输出中渲染时所调用的方法"""
         fmt = partial(quantity_to_latex, p=4)
         
+        # 其实基类中并没有 self.L_UV 属性。但目前几个具体子类要么接收 L_UV 参数，要么 override 了这个 repr，所以这样写没事。
         return rf"""{self.__class__.__name__}( $n_0=$ {fmt(self.n_0)}, $\gamma={self.gamma}$, 
         $L_{{\rm UV}}=$ {fmt(self.L_UV)}, $N_{{\rm H}}=$ {fmt(self.NH_target)}, 
         $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm out}}=$ {fmt(self.r_out)} , 
@@ -102,16 +120,9 @@ class LRD_IR_ModelBase(ABC):
     @u.quantity_input
     def r_with_feedback(self, r: Quantity['length']) -> Quantity[u.pc]:
         """考虑 feedback 反馈效果时，从尘埃原位置 r 到新位置 r' 的映射。  
-        类似于流体的 Lagrangian 坐标。  
-        
-        输入：r 是某个尘埃颗粒原先（无反馈）时的位置。  
-        返回：r' 是考虑 feedback 后，尘埃所处的新位置。  
-        r 可以是标量，也可以是数组。返回值与其形状相同。
+        对于无反馈的模型，r' = r。
         """
-        if hasattr(self, 'r_ph'):  # 这里用 r_ph 属性来判断模型是否支持 feedback。其实也可以用继承的方法，基类中只是返回 r，而子类中 override 成相应的实现。
-            return np.maximum(r, self.r_ph)  # 目前对 feedback 的处理：原先在 r_ph 以内的尘埃都会被扫到 r_ph 处堆积，而其余位置不变。
-        else:
-            return r
+        return r
 
     @u.quantity_input
     def n_profile(self, r: Quantity['length']) -> Quantity[u.cm**-3]:
@@ -166,8 +177,8 @@ class LRD_IR_ModelBase(ABC):
     def _calc_r_out(self):
         """calc the r_out that could give the specified NH"""
         NH_target = self.NH_target
-        if NH_target is None:
-            raise ValueError("NH_target is not specified yet!")
+        # if NH_target is None:  # 以前似乎考虑 NH_target 可以传入 None 的情况，但现在要求必须传入值了。
+        #     raise ValueError("NH_target is not specified yet!")
         r_out = self.NH_profile_inverse(NH_target)
         
         if np.isinf(r_out):        #! 注意，在极端参数下，r_out 可能超过浮点数上界，变为 inf。
