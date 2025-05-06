@@ -70,6 +70,18 @@ class OpacityData:
     def nu_cgs(self):
         return self.nu.to_value(u.Hz)
     
+    @property
+    def sigma_H_Prad(self) -> Quantity['area']:
+        """Radiation pressure cross section per H (sigma_H_Prad)  
+        
+        sigma_H_Prad = sigma_H_abs + (1- <cos(theta)>) * sigma_H_sca  
+        <cos(theta)> 的观测值（ISM）参见 Fig 21.4 in Draine 2011。对于长波（Rayleigh 散射）为 0，对于 optical 波段约为 0.5.
+        """
+        cos_theta_avg = 0.5
+        sigma_H_sca = self.sigma_H_ext - self.sigma_H_abs  # 散射截面
+        return self.sigma_H_abs + (1 - cos_theta_avg) * sigma_H_sca
+    
+    
     #* 注意 @cached_property 要保证 nu, sigma_H_ext, sigma_H_abs 是不可变的，因为缓存无法随之变化。
     @cached_property
     def interp_ext(self):
@@ -78,6 +90,10 @@ class OpacityData:
     @cached_property
     def interp_abs(self):
         return LogLogInterpolator(self.nu, self.sigma_H_abs)
+    
+    @cached_property
+    def interp_Prad(self):
+        return LogLogInterpolator(self.nu, self.sigma_H_Prad)
     
     @property
     def sigma_H_ext_V(self) -> Quantity['area']:
@@ -126,8 +142,8 @@ class OpacityData:
                               x: Quantity['wavenumber'] | None = None, 
                               x_sample_num: int = 1000
                               ) -> Self:
-        """从 dust_extinction 包所提供的 extinction model，创建 OpacityData 对象。
-        参见 from_extinction_data 方法的 docstring。
+        """从 dust_extinction 包所提供的 extinction model，创建 OpacityData 对象。  
+        参见 from_extinction_data 方法的 docstring。  
         除非人为指定 x，否则 x 在 extinction model 的 x_range 内以 log scale 等距采样。
         """
         if x is None:

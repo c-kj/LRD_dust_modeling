@@ -249,9 +249,14 @@ class L_UV_Model(EnergyBalanceModel):
 
 
 
-class OrionLRDModel(SemiOrionLRDModel):
-    
-    config = SemiOrionLRDModel.config | {  # 从父类的 config 上拓展
+def SED_mean_sigma_H_Prad(*, sed: SED, opacity: OpacityData, integrator_method: str = 'trapz_log') -> Quantity[u.cm**2]:
+    """根据给定的 SED 加权计算 辐射压截面 sigma_H_Prad 的平均值。  
+    用于计算等效辐射压截面，但单独抽出来作为一个函数，方便测试。
+    """
+    nu_array = sed.nu
+    sigma_H = opacity.interp_Prad(nu_array)
+    integrator = trapz_mapping[integrator_method]
+    return integrator(sigma_H * sed.L_nu, nu_array) / integrator(sed.L_nu, nu_array)
 
 
 class OrionLRDModel(EnergyBalanceModel):
@@ -262,6 +267,7 @@ class OrionLRDModel(EnergyBalanceModel):
 
     config = EnergyBalanceModel.config | {  # 从父类的 config 上拓展
         'UV_Flux.integrator': 'trapz_log',  # UV_Flux 的积分方法
+        'sigma_H_Prad_eff.method': 'SED_mean',  # 可选项：'SED_mean', 'max', 或某个 Quantity（表示在这个波长处取 sigma_H_Prad 的值）
     }
 
     @u.quantity_input
@@ -294,8 +300,20 @@ class OrionLRDModel(EnergyBalanceModel):
         """等效辐射压截面  
         计算方法由 config['sigma_H_Prad_eff.method'] 控制。
         """
-        return self.opacity.sigma_H_ext.max()  #TEMP 与之前的处理保持一致，取截面最大值。即将更改为可以使用 incident SED 加权平均
-    
+        method = self.config['sigma_H_Prad_eff.method']
+        if method == 'max':  # 取整个 opacity.sigma_H_Prad 的最大值。这是先前采用的方法。
+            return self.opacity.sigma_H_Prad.max()
+        elif method == 'SED_mean':  # 取入射光谱的 L_nu 作为权重，计算加权平均值。
+            return SED_mean_sigma_H_Prad(
+                sed=self.incident_SED,
+                opacity=self.opacity,
+                integrator_method=self.config['UV_Flux.integrator'])  # 这里积分方法与 UV_Flux 一致，因为用的是 incident_SED.nu 作为横轴数组
+        elif isinstance(method, Quantity):  # 取 指定波长处的 sigma_H_Prad 
+            nu = method.to(u.Hz, equivalencies=u.spectral())
+            return self.opacity.interp_Prad(nu)
+        else:
+            raise ValueError(f"sigma_H_Prad_eff: {method = } is invalid! ")
+
     @override
     @u.quantity_input
     def UV_Flux(self, r: Quantity['length'], tau: Quantity[''] = None) -> Quantity[u.erg / u.s]:

@@ -21,6 +21,14 @@
 
 ## A_V constraint Project
 
+- 模型中的不同可选项
+  - opacity law: Orion, ISM, SMC, ...
+  - feedback or not (feedback method: max, SED_mean, no ...)
+  - $(n_0, \gamma)$ 
+  - 不同的观测到的 LRD 源
+  - ……
+
+
 ## 算法描述
 
 ### 各个 Model

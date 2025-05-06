@@ -65,6 +65,30 @@ class SED:
         return self.interpolator(self.nu, self.L_lambda)
     
     
+    # 这里不加 @u.quantity_input，怕它做单位转换导致 <= 比较错误
+    def select_wavelength_range(self, *, min = None, max = None) -> Self:
+        """选择指定波长范围内的 SED 数据，返回新的 SED 对象。  
+        min/max 如果为 None，则取当前 SED 的 最小值/最大值。
+        """
+        # 这里没法兼容 nu 和 wavelength，因为它们的升降序相反，无法从 None 中推断出是 min 还是 max
+        if min is None:
+            min = self.wavelength.min()
+        if max is None:
+            max = self.wavelength.max()
+        
+        with u.set_enabled_equivalencies(u.spectral()):
+            min = min.to(u.AA)
+            max = max.to(u.AA)
+        if min > max:
+            raise ValueError(f"{min = } > {max = }，请检查输入的范围。")
+        
+        mask = (min <= self.wavelength) & (self.wavelength <= max)
+        if not np.any(mask):
+            warn(f"没有在 {min} 和 {max} 之间找到数据，返回空的 SED 对象。")
+        
+        #* 注意，这里假定了 nu, L_nu 都与 wavelength 一一对应
+        return self.__class__(nu=self.nu[mask], L_nu=self.L_nu[mask])
+    
     def refine(self, num: int = 0, *, keep_original: bool = True) -> Self:
         """对 SED 进行插值，返回新的 SED 对象。  
         num: 插值新增的点数。  

@@ -19,9 +19,9 @@
   - [ ] 用 $\tau_{\rm rad} = 1$ 作为堆积位置合理吗？
     - [ ] 说是有模拟文献的依据
     - [ ] 可以自己简单推一下，辐射压 vs 引力 
-  - [ ] **tau_UV 怎么取？**
-    - [ ] 之前是取 截面最大值。这对于更广泛的 opacity law 并不合适。
-    - [ ] 取 rad pressure cross 对 incident L_nu 平均的值作为截面，然后拿这个截面算 tau_UV
+  - [x] tau_UV 怎么取？
+    - [x] 之前是取 截面最大值。这对于更广泛的 opacity law 并不合适。
+    - [x] 取 rad pressure cross 对 incident L_nu 平均的值作为截面，然后拿这个截面算 tau_UV
       - [x] Draine 2011 书上 23.10.1 节可以作为参考
 - [ ] **换不同的 opacity law**
   - [x] 加入从政融那里拿到的 .opc 数据。但是波长覆盖范围都太小了，用不了。
@@ -34,6 +34,18 @@
   - [ ] 与政融给我的模型比较。尤其注意 FUV、UV、Optical、IR 多波段的比较
   - [ ] **比较不同的 opacity 下的光谱**
 - [ ] 把 Far UV 的能量加进模型 （政融 working on it）
+- [ ] observed SED 实际上是 消光 与 IR re-emission 的加和！
+  - [ ] 这意味着，不能直接把 observed SED 当作 消光后的 SED，否则加上 IR re-emission 后总是会比 observed 高！
+  - [ ] 能不能用迭代法来解？
+    - [ ] 一开始用 observed SED 充当 reddened SED （的初次尝试），算出 re-emission L_nu 后，加在  reddened SED 上，算出与 observed SED 的差值，想办法调整 reddened SED，进行迭代，直到收敛。
+      - [ ] 要小心过冲。可能用 de-reddened SED 作为变元更好？
+
+  - [x] 目前来看，NIR 处被吸收的能量较少（opacity 低 & observed flux 小），所以这里的变化对总能量的贡献不多，也就不怎么影响 re-emission 的形状和大小。所以可以暂时忽略这个效应。
+
+- [ ] 自吸收问题：近红外处，IR re-emission 也会被后续的 dust 吸收然后再发射！可能需要解辐射转移方程（把 能量平衡方程用于计算下一点处的 B_nu）
+  - [ ] 什么条件下可以忽略？
+  - [x] 由于 NIR 对能量贡献较小，这里也许也可以忽略？不太确定。
+
 
 ## Coding
 
@@ -73,8 +85,9 @@
   - [ ] 重新推导：让 beta 成为可变参数，把所有系数对 beta 的依赖搞明白
 - [ ] 代码整理
   - [x] 弄清楚之前的 UV_flux IR_flux 的具体单位，写注释
-  - [ ] 梳理继承关系 ？
-  - [ ] 去掉一些不必要的继承？
+  - [x] 梳理继承关系
+    - [x] 把 `L_UV` 从不必要的模型中去除；考虑在基类中去除
+    - [ ] *去掉一些不必要的继承？*
   - [x] 重新写 repr 和 latex repr
   - [x] 把 A_V_model 改造成一个类
     - [x] 记录 A_V 属性作为实例属性
