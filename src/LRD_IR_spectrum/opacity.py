@@ -8,7 +8,7 @@ import astropy.units as u
 from astropy.units import Quantity
 from dust_extinction.baseclasses import BaseExtModel
 
-from .utils import LogLogInterpolator
+from .utils import Planck_B_nu, LogLogInterpolator, trapz_mapping, quad_mapping
 
 
 class OpacityData:
@@ -161,5 +161,54 @@ class OpacityData:
             x_range: tuple[float, float] = model.x_range
             x = np.geomspace(*x_range, num=x_sample_num) * (1/u.micron)
         return cls.from_extinction_data(x=x, A_rel=model(x), sigma_H_V=sigma_H_V)
+    
+    
+    #TEMP 目前把 IR_Flux 的计算迁移到 OpacityData 类中，并在实例中缓存，从而加速计算。但一部分方法、参数现在直接写死在代码里，以后可以改成可配置的。
+    #* 把 IR_Flux 的计算、从 IR_Flux 到 T 的反插表，提前打表存好。这些与 n_0, gamma 无关，只与 opacity 的 .sigma_H_abs, nu 采样点, 以及 T_array 的采样有关。
+    
+    @u.quantity_input
+    def IR_Flux(self, T: Quantity['temperature']) -> Quantity[u.erg / u.s]:
+        """计算方程右端的 IR Flux，即尘埃颗粒再发射的能流通量。  
+        T 可以是标量，或者 numpy 数组。返回值始终为 array
+        """
+        nu_array = self.nu
+
+        @u.quantity_input  #TEMP 为了速度，这里可以不做检查。而且返回值也不该转换单位
+        def integrand(nu: Quantity['frequency'], T: Quantity['temperature']) -> Quantity[u.erg / u.s / u.Hz]:
+            return self.interp_abs(nu) * Planck_B_nu(nu, T)
+
+        method: str = 'trapz_log'  #TEMP 目前写死为 trapz_log，后续可以改为可设置
+        if method in quad_mapping:
+            # 关于这两种积分方法：
+            # quad    : 这个方法默认情况下会给出 0 值，可能是因为自适应算法没有注意到峰的位置。
+            # quad_log: 似乎是接近准确的，但非常慢 (单个计算 1min)
+            integrator = quad_mapping[method]
+            flux = integrator(lambda nu: integrand(nu, T), nu_array.min(), nu_array.max())[0]
+        if method in trapz_mapping:
+            integrator = trapz_mapping[method]  # 这里用 trapz 或 trapz_log 区别很小。因为 nu_array 来自 opacity，足够密集。
+            flux = integrator(integrand(nu_array[:, None], T), nu_array[:, None], axis=0)  #* 由于 trapz_log 中有 f(x) * x，所以 nu_array 也要变成二维才能 broadcast
+
+        flux *= 4*np.pi
+
+        if flux.size == 1:
+            flux = flux.item()  # 把标量 array 变成标量。同时适用于 array(1) 和 array([])
+        return flux
+    
+    @cached_property
+    def interp_IR_Flux_T_array(self):
+        """准备一个从 IR_flux 到 T 的插值表，从而加速计算"""
+        
+        #TEMP 要改为可设置的  
+        T_max = 2000 * u.K      # 反插表的最大温度。要比 T_sub 可能的最大值更大
+        T_accuracy = 1 * u.K    # 反插表的间距。
+        
+        T_array = np.linspace(1*u.K, T_max, int((T_max - 1*u.K) / T_accuracy) + 1)
+        T_array_low = np.geomspace(1e-10 * u.K, 1 * u.K, 10, endpoint=False)  # 在 < 1 K 的范围，用 log 尺度取几个点，从而避免直接把下界取 0 导致 log 插值错误的问题，也避免这里在 log scale 下间隔过大。
+        #FUTURE 这里的低温下界似乎太低了，造成 IR_Flux 非常小，出现 log(0)，不是很有必要。考虑改大一点
+        T_array = np.concatenate([T_array_low, T_array]) 
+        
+        IR_Flux_array = self.IR_Flux(T_array)
+        interp = LogLogInterpolator(IR_Flux_array, T_array, bounds_error=False, fill_value='extrapolate')  #* 在越界时不报错，而是外插。由于数值误差，UV_Flux(r_in) 可能会轻微地超出 IR_Flux(T_sub)。这样可以避免报错。
+        return interp
 
 OpacityData.__init__ = u.quantity_input(OpacityData.__init__)  # 给 __init__ 方法添加单位检查。因为 OpacityData 是 dataclass 不好直接装饰到 __init__ 上，所以在这里单独处理

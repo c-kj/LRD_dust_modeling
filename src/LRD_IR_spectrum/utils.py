@@ -209,3 +209,14 @@ def quantity_to_latex(quan: Quantity,
     """
     
     return quan.to_string(format=format, unit=unit, precision=p, subfmt=subfmt, formatter=formatter)
+
+
+# Planck 函数
+
+@u.quantity_input
+def Planck_B_nu(nu: Quantity['frequency'], T: Quantity['temperature']) -> Quantity[u.erg / u.s / u.cm**2 / u.Hz]:
+    """Planck B_nu function. Returns spectral radiance with proper units.
+    """
+    from astropy.constants import c, h, k_B
+    x = h * nu / (k_B * T)
+    return (2 * h / c**2) * nu**3 / (np.exp(x) - 1)

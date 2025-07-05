@@ -9,19 +9,11 @@ import astropy.units as u
 import astropy.constants as const
 from astropy.units import Quantity
 
-from .utils import trapz_log, quad_mapping, trapz_mapping, quantity_to_latex
+from .utils import Planck_B_nu, trapz_log, quad_mapping, trapz_mapping, quantity_to_latex
 from .opacity import OpacityData
 
 class R_out_Error(Exception):
     pass
-
-@u.quantity_input
-def Planck_B_nu(nu: Quantity['frequency'], T: Quantity['temperature']) -> Quantity[u.erg / u.s / u.cm**2 / u.Hz]:
-    """Planck B_nu function. Returns spectral radiance with proper units.
-    """
-    from astropy.constants import c, h, k_B
-    x = h * nu / (k_B * T)
-    return (2 * h / c**2) * nu**3 / (np.exp(x) - 1)
 
 class IPyChainMap(ChainMap):
     """A subclass of ChainMap that allows for IPython tab completion."""

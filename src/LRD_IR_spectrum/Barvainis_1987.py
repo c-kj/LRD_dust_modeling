@@ -7,8 +7,8 @@ import astropy.constants as const
 from astropy.units import Quantity
 
 
-from .model_base import LRD_IR_ModelBase, Planck_B_nu, R_out_Error
-from .utils import LogLogInterpolator
+from .model_base import LRD_IR_ModelBase, R_out_Error
+from .utils import LogLogInterpolator, Planck_B_nu
 from .opacity import OpacityData
 
 #FUTURE 把系数对 beta （以及 q_ir）的依赖推导出来，从而让 B87 适用于任意 beta 和 power-law opacity 的情况

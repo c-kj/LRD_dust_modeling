@@ -7,9 +7,7 @@ from scipy import integrate, optimize
 import astropy.units as u
 from astropy.units import Quantity
 
-from .model_base import Planck_B_nu
-
-from .utils import LogLogInterpolator, trapz_log, quad_vec_log, quad_vec_unit, trapz_mapping, quantity_to_latex
+from .utils import Planck_B_nu, LogLogInterpolator, trapz_log, quad_vec_log, quad_vec_unit, trapz_mapping, quantity_to_latex
 from .opacity import OpacityData
 from .incident_SED import SED
 from .model_base import LRD_IR_ModelBase
@@ -31,9 +29,8 @@ class EnergyBalanceModel(LRD_IR_ModelBase):
     """
     
     config = LRD_IR_ModelBase.config | {  # 从父类的 config 上拓展
-        'IR_Flux.integrator': 'trapz_log',  # IR_Flux 的积分方法
         'T_floor': 0.0 * u.K,  # 温度的下限，低于这个温度的区域温度都设为这个值
-        'T_accuracy': 1.0 * u.K,  # 温度精确到 1 K。这决定了 T_dust_profile 中反插表的间距，或者 brentq 的 xtol
+        'T_accuracy': 1.0 * u.K,  # 温度精确到 1 K。这决定了 T_dust_profile 中反插表的间距，或者 brentq 的 xtol。#* IR_Flux 的计算挪到 OpacityData 中去后，这个 config 就只控制 brentq 方法的精度，不再控制反插表的间距了。
     }
     
     @u.quantity_input
@@ -84,34 +81,6 @@ class EnergyBalanceModel(LRD_IR_ModelBase):
         """
         return np.maximum(r, self.r_ph)  # 目前对 feedback 的处理：原先在 r_ph 以内的尘埃都会被扫到 r_ph 处堆积，而其余位置不变。
 
-    @u.quantity_input
-    def IR_Flux(self, T: Quantity['temperature']) -> Quantity[u.erg / u.s]:
-        """计算方程右端的 IR Flux，即尘埃颗粒再发射的能流通量。  
-        T 可以是标量，或者 numpy 数组。返回值始终为 array
-        """
-        nu_array = self.opacity.nu
-
-        @u.quantity_input  #TEMP 为了速度，这里可以不做检查。而且返回值也不该转换单位
-        def integrand(nu: Quantity['frequency'], T: Quantity['temperature']) -> Quantity[u.erg / u.s / u.Hz]:
-            return self.opacity.interp_abs(nu) * Planck_B_nu(nu, T)
-
-        method: str = self.config['IR_Flux.integrator']  # 这里用 trapz 或 trapz_log 区别很小。因为 nu_array 来自 opacity，足够密集。
-        if method == 'quad':  # 这个方法默认情况下会给出 0 值，可能是因为自适应算法没有注意到峰的位置。
-            flux = quad_vec_unit(lambda nu: integrand(nu, T), nu_array.min(), nu_array.max())[0]
-        elif method == 'quad_log':  #! 似乎是接近准确的，但非常慢 (单个计算 1min)
-            flux = quad_vec_log(lambda nu: integrand(nu, T), nu_array.min(), nu_array.max())[0]
-        elif method == 'trapz':
-            flux = integrate.trapezoid(integrand(nu_array[:, None], T), nu_array, axis=0)
-        elif method == 'trapz_log':
-            flux = trapz_log(integrand(nu_array[:, None], T), nu_array[:, None], axis=0)  #* 由于 trapz_log 中有 f(x) * x，所以 nu_array 也要变成二维才能 broadcast
-        else: 
-            raise ValueError(f"method {method = } is invalid! ")
-
-        flux *= 4*np.pi
-
-        if flux.size == 1:
-            flux = flux.item()  # 把标量 array 变成标量。同时适用于 array(1) 和 array([])
-        return flux
 
     @abstractmethod
     def UV_Flux(self, r: Quantity['length'], tau: Quantity[''] = None) -> Quantity[u.erg / u.s]:
@@ -137,16 +106,7 @@ class EnergyBalanceModel(LRD_IR_ModelBase):
 
     @u.quantity_input
     def T_dust_profile(self, r: Quantity['length']) -> Quantity[u.K]:
-        
-        # 准备一个从 IR_flux 到 T 的插值表，从而加速计算
-        T_array = np.linspace(1*u.K, self.T_sub, int((self.T_sub - 1*u.K) / self.config['T_accuracy']) + 1)
-        T_array_low = np.geomspace(1e-10 * u.K, 1 * u.K, 10, endpoint=False)  # 在 < 1 K 的范围，用 log 尺度取几个点，从而避免直接把下界取 0 导致 log 插值错误的问题，也避免这里在 log scale 下间隔过大。
-        #FUTURE 这里的低温下界似乎太低了，造成 IR_Flux 非常小，出现 log(0)，不是很有必要。考虑改大一点
-        T_array = np.concatenate([T_array_low, T_array]) 
-        
-        IR_Flux_array = self.IR_Flux(T_array)
-        interp = LogLogInterpolator(IR_Flux_array, T_array, bounds_error=False, fill_value='extrapolate')  #* 在越界时不报错，而是外插。由于数值误差，UV_Flux(r_in) 可能会轻微地超出 IR_Flux(T_sub)。这样可以避免报错。
-        
+        interp = self.opacity.interp_IR_Flux_T_array # 用 opacity 中缓存好的 interp
         UV_Flux = self.UV_Flux_with_feedback(r) # 考虑了 feedback 的效应，对 UV_Flux 做了修正。 # 形状与 r 相同，可能是标量，也可能是数组。
         
         T_dust = np.where(UV_Flux == 0, 0.0, interp(UV_Flux))  # 如果 IR_Flux 为 0，那么 T = 0，而非使用插值，因为插值可能给出 nan.
