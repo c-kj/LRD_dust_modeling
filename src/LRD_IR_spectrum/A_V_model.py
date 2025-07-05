@@ -119,3 +119,25 @@ class A_V_Model(OrionLRDModel):
         # 红外 SED 数据点比较稀疏，不论是用 trapz_log 还是如何插值采样，都会有较大不确定性。但因为红外部分消光很弱，所以这部分的差距其实不显著。
         nu_array = self.incident_SED.nu
         return trapz_log(self.incident_SED.L_nu - self.observed_SED.L_nu, nu_array)
+    
+            
+    # @u.quantity_input(equivalencies=u.spectral())   # 兼容各种可以在 u.spectral() 等效下转换为频率的物理量
+    def calc_nu_L_nu_total(
+        self,
+        nu_array: Quantity['frequency'] | None = None,
+        r_sample_num: int | None = None,
+    ) -> Quantity[u.erg / u.s]:
+        """计算 observed SED + re-emission SED 的总功率谱。  
+        但目前并不投入使用（被注释掉了），因为论文 Fig.2 中目前不画 observed SED + re-emission SED。
+        """
+        if nu_array is None:  # if nu_array is not given, use the nu array in opacity
+            nu_array = self.opacity.nu
+        else:
+            nu_array = nu_array.to(u.Hz, copy=False)
+            
+        observed_SED = self.observed_SED
+        observed_nu_L_nu = observed_SED.interp_nu_L_nu_zeropad(nu_array)  # 需要在插值范围外补 0
+
+        return self.calc_nu_L_nu(nu_array=nu_array, r_sample_num=r_sample_num) + observed_nu_L_nu
+    
+    

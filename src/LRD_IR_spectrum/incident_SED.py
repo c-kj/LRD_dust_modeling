@@ -64,6 +64,11 @@ class SED:
     def interp_L_lambda(self):
         return self.interpolator(self.nu, self.L_lambda)
     
+    @property
+    def interp_nu_L_nu_zeropad(self):
+        """与 interp_nu_L_nu 类似，但在插值范围外补 0。"""
+        return self.interpolator(self.nu, self.nu_L_nu, fill_value=0, bounds_error=False)
+    
     
     # 这里不加 @u.quantity_input，怕它做单位转换导致 <= 比较错误
     def select_wavelength_range(self, *, min = None, max = None) -> Self:
