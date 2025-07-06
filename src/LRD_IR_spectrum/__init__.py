@@ -7,3 +7,5 @@ from .A_V_model import N_H_from_A_V, de_redden_SED, A_V_Model
 from .utils import Planck_B_nu, ScaledInterpolator, LinearInterpolator, LogLogInterpolator, LogLinearInterpolator, trapz_log, quantity_to_latex
 
 from .reload import deep_reload
+
+from .plot_utils import *
