@@ -1,0 +1,14 @@
+name: LRD_dust_modeling
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - astropy
+  - numpy
+  - python
+  - scipy
+  - seaborn
+  - dust_extinction
+  - tqdm
+  - joblib
+  - ipympl
