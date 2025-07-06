@@ -45,6 +45,10 @@ def tau_from_A(A: MagnitudeLike) -> float:
     
     return A_mag * 0.4*np.log(10) 
 
+def A_from_tau(tau: float) -> Magnitude:
+    A_float = float(tau / (0.4*np.log(10)))  # 必须要转换为 float，否则 Magnitude 对于无量纲量给出的不是直接的数值，而是当做量纲为空的 Quantity 处理
+    return Magnitude(A_float)  # 返回以 magnitude 为单位的值
+
 
 def N_H_from_A_V(A_V: MagnitudeLike, opacity: OpacityData) -> Quantity[u.cm**-2]:
     """Convert A_V to N_H
@@ -141,3 +145,16 @@ class A_V_Model(OrionLRDModel):
         return self.calc_nu_L_nu(nu_array=nu_array, r_sample_num=r_sample_num) + observed_nu_L_nu
     
     
+    # M_dust 的限制
+    def A_V_max_from_M_gas(self, M_gas: Quantity[u.Msun]) -> Magnitude:
+        """根据给定的 M_gas 计算 A_V 的上限。  
+        """
+        N_H_max = self.NH_max_from_M_gas(M_gas)
+        tau_max = N_H_max * self.opacity.sigma_H_ext_V
+        return A_from_tau(tau_max)
+
+    @property
+    def A_V_max_from_NH_max(self):
+        N_H_max = self.NH_max  # 有可能是 np.inf * u.cm**-2，但同样能正确计算
+        tau_max = N_H_max * self.opacity.sigma_H_ext_V
+        return A_from_tau(tau_max)

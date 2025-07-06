@@ -49,6 +49,7 @@ class LRD_IR_ModelBase(ABC):
         'calc_L_nu.integrator': 'trapz_log',  # calc_L_nu 的积分方法。默认方法是 'trapz_log'，因为 trapz 要显著快于 quad，而 log scale 收敛性显著更好。
         'r_sample_num': 1000,  # 对 r 积分时，从 r_in 到 r_out 之间采样的点数。
         'r_sample_scale': 'log',  # get_r_array 采样的 scale。可选 'linear' 或 'log'。
+        'r_out_limit': 4.6e10 * u.lyr,  # r_out 可取的最大值。超过这个值则抛出 R_out_Error 异常。 4.6e10 * u.lyr 对应于可观测宇宙半径。
     }
 
     @u.quantity_input
@@ -142,7 +143,7 @@ class LRD_IR_ModelBase(ABC):
         factor: Quantity[''] = NH / (self.n_0 * self.r_in)
         #* 如果 gamma > 1，那么 NH 的最大值是 n_0 * r_in / (gamma-1)。如果 NH 大于这个值，那么 r 无法找到。
         if gamma > 1 and factor > 1/(gamma-1):
-            raise R_out_Error(f"The {NH = } is larger than possible in this NH_profile with {gamma = }, cannot find r")  # raise error，留给外部处理。
+            raise R_out_Error(f"The {NH = } is larger than possible {self.NH_max = } in this NH_profile with {gamma = }, cannot find r")  # raise error，留给外部处理。
         
         if gamma == 1:
             r_ratio = np.exp(factor)
@@ -150,6 +151,14 @@ class LRD_IR_ModelBase(ABC):
             r_ratio = (factor * (1-gamma) + 1) ** (1/(1-gamma))
         return self.r_in * r_ratio
     
+    @property
+    @u.quantity_input
+    def NH_max(self) -> Quantity[u.cm**-2]:
+        """返回当前气体密度分布参数 (n_0, gamma, r_in) 下的最大可能 NH"""
+        gamma = self.gamma
+        if gamma > 1:
+            return self.n_0 * self.r_in / (self.gamma - 1)  # gamma > 1 时，NH_max = n_0 * r_in / (gamma - 1)，否则无穷大。
+        return np.inf * u.cm**-2
     
     # r_out 的处理：调用 _calc_r_out() 计算并缓存结果。可以手动通过 self.r_out = value 来修改其值。可以通过 del self.r_out 来删除缓存，下次调用时重新计算。
     @property
@@ -173,8 +182,11 @@ class LRD_IR_ModelBase(ABC):
         #     raise ValueError("NH_target is not specified yet!")
         r_out = self.NH_profile_inverse(NH_target)
         
-        if np.isinf(r_out):        #! 注意，在极端参数下，r_out 可能超过浮点数上界，变为 inf。
-            logging.warning("r_out is inf due to float overflow.")
+        if np.isinf(r_out):        # 在极端参数下，r_out 可能超过浮点数上界，变为 inf。
+            raise R_out_Error("r_out is inf due to float overflow.")  #TEMP 改为抛出异常，留给外部处理。
+        
+        if r_out > self.config['r_out_limit']:  # r_out 太大了（超过宇宙半径）
+            raise R_out_Error(f"{r_out = } is too large!")
             
         return r_out
     
@@ -247,7 +259,8 @@ class LRD_IR_ModelBase(ABC):
             # note: 这里的 self 实际上是从函数外部直接引用的，没有传入
             # 要把 4πr^2 中的 r 改为 dust 颗粒实际所在的位置，也即 r_with_feedback。而 T 和 n 的 profile 中所使用的仍是原先的 r。
             r_with_feedback = self.r_with_feedback(r)
-            return Planck_B_nu(nu, self.T_dust_profile(r)) * self.n_profile(r) * 4 * np.pi * r_with_feedback**2  # 这里的 4pi 是 dV = 4 pi r^2 dr 的系数
+            return Planck_B_nu(nu, self.T_dust_profile(r)) * (self.n_profile(r) * (4 * np.pi) * r_with_feedback**2)  # 这里的 4π 是 dV = 4 pi r^2 dr 的系数
+            # 这里后面的一系列括号是为了让一维小数组先相乘，最后再与前面的二维大数组相乘，相比于先广播成二维大数组再多次相乘要快 4 倍。
 
         #* 主要是采样方式 (log / linear) 对积分的收敛性影响较大。积分是用 trapz 还是 trapz_log 影响较小。
         L_nu_integrator: str = self.config['calc_L_nu.integrator']
@@ -262,7 +275,7 @@ class LRD_IR_ModelBase(ABC):
         else:
             raise ValueError(f"method {L_nu_integrator = } is invalid! ")
 
-        L_nu *= 4 * np.pi * sigma_H   # 最后，乘上积分前面统一的 factor。sigma_H 这个关于 nu 的数组是提到积分外面来的。这里的 4pi 是出射立体角 Omega
+        L_nu *= 4 * np.pi * sigma_H   # 最后，乘上积分前面统一的 factor。sigma_H 这个关于 nu 的数组是提到积分外面来的。这里的 4π 是出射立体角 Omega
 
         return L_nu
     
@@ -299,3 +312,35 @@ class LRD_IR_ModelBase(ABC):
             for method_name in self.__dir__() if method_name.startswith('calc_L_from')  # 通过方法名的开头来识别「计算总光度的方法」。这里不用 dir(self) 是因为它按字母序排列。
         }
         return Luminosity_dict
+    
+    
+    # Limits from M_dust
+    
+    @property
+    @u.quantity_input
+    def M_gas(self) -> Quantity[u.Msun]:
+        """返回当前气体密度分布参数 (n_0, gamma, r_in, r_out) 对应的气体质量 M_gas"""
+        from astropy.constants import m_p
+        gamma = self.gamma
+        r_ratio = self.r_out / self.r_in
+        if gamma == 3:  # 目前没有处理 gamma == 3，因为目前探究的参数空间还不涉及 gamma == 3
+            raise NotImplementedError("M_gas is not implemented for gamma = 3 yet.")
+        return m_p * self.n_0 * 4*np.pi * self.r_in**3 * (r_ratio**(3-gamma) - 1) / (3-gamma)
+    
+    
+    @u.quantity_input
+    def r_out_from_M_gas(self, M_gas: Quantity[u.Msun]) -> Quantity[u.pc]:
+        """根据给定的 M_gas 计算 r_out"""
+        from astropy.constants import m_p
+        gamma = self.gamma
+        if gamma == 3:  # 目前没有处理 gamma == 3，因为目前探究的参数空间还不涉及 gamma == 3
+            raise NotImplementedError("r_out_from_M_gas is not implemented for gamma = 3 yet.")
+        r_ratio = ((3-gamma) * M_gas / (m_p * self.n_0 * 4*np.pi * self.r_in**3) + 1)**(1/(3-gamma))
+        return self.r_in * r_ratio
+    
+
+    @u.quantity_input
+    def NH_max_from_M_gas(self, M_gas: Quantity[u.Msun]) -> Quantity[u.cm**-2]:
+        """根据给定的 M_gas 计算 NH_max"""
+        r_out = self.r_out_from_M_gas(M_gas)
+        return self.NH_profile(r_out)
