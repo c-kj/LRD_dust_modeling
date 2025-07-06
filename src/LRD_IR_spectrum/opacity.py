@@ -108,6 +108,15 @@ class OpacityData:
         nu_V: Quantity['frequency'] = (5470 * u.AA).to(u.Hz, equivalencies=u.spectral())
         return self.interp_ext(nu_V)
     
+    @property
+    def A_rel(self) -> Quantity['']:
+        return self.sigma_H_ext / self.sigma_H_ext_V
+    
+    @cached_property
+    def interp_A_rel(self):
+        """A_rel 的插值函数"""
+        return LogLogInterpolator(self.nu, self.A_rel)
+    
     @classmethod
     def from_file(cls, filename: str | Path, factor: float = 1.0, ignore_scatter: bool = False) -> Self:
         """从 CLOUDY output file 中读取数据，从而创建 OpacityData 对象。

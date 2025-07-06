@@ -7,6 +7,7 @@ import numpy as np
 import astropy.units as u
 import astropy.constants as const
 from astropy.units import Quantity
+from astropy.table import QTable
 
 from .utils import LogLogInterpolator
 
@@ -136,6 +137,10 @@ class SED:
         L_nu: Quantity[u.erg/u.s/u.Hz] = L_nu / cls.interpolator(wavelength, L_nu)(1450 * u.AA) * NormalizedFactorAt1450  # 归一化后，L_nu 在 1450 Angstrom 处的值为 NormalizedFactorAt1450
         
         return cls(nu=nu, L_nu=L_nu)
+    
+    @classmethod
+    def from_QTable(cls, qtable: QTable):
+        return cls(nu=qtable['nu_rest'], L_nu=qtable['Lnu_rest'])  # 假定 qtable 中有这两列数据
 
 
 def IncidentSED(filename: str):
