@@ -21,10 +21,30 @@ class IPyChainMap(ChainMap):
         return list(self)  # 返回各个 key 组成的列表
 
 
+
 #FUTURE 重新考虑 抽象基类 该怎么写，最好只提供接口。实现放到 mixin？
 class LRD_IR_ModelBase(ABC):
-    """各个 Model 的抽象基类。  
-    
+    """Abstract base class for various models.
+
+    Abstract methods:
+    - Calculation of r_in (based on T_sub)
+    - Calculation of T_dust_profile
+
+    Specifically implemented:
+    - Dust distribution
+        - Parameters n_0 and gamma
+        - Calculation of r_out (based on NH_target)
+        - Power-law distribution of dust density, corresponding NH_profile, and its inverse
+    - Specifying opacity
+    - Calculation of dust re-emission spectrum (based on T_dust_profile, n_profile, and opacity integration)
+    - Other utilities
+        - _repr_latex_ and __format__
+        - r_with_feedback
+        - check_Luminosity
+        - ...
+
+    各个 Model 的抽象基类。
+
     抽象方法：
     - r_in 的计算（根据 T_sub）
     - T_dust_profile 的计算
@@ -81,7 +101,10 @@ class LRD_IR_ModelBase(ABC):
     #     return f"{self.__class__.__name__}(n_0={self.n_0}, gamma={self.gamma}, L_UV={self.L_UV}, T_sub={self.T_sub}, r_in={self.r_in})"
 
     def _repr_latex_(self):
-        """在 Jupyter Notebook 的单元输出中渲染时所调用的方法"""
+        """Render method called for Jupyter Notebook cell output.
+
+        在 Jupyter Notebook 的单元输出中渲染时所调用的方法
+        """
         fmt = partial(quantity_to_latex, p=4)
         
         # 其实基类中并没有 self.L_UV 属性。但目前几个具体子类要么接收 L_UV 参数，要么 override 了这个 repr，所以这样写没事。
@@ -107,12 +130,15 @@ class LRD_IR_ModelBase(ABC):
     
 
     @abstractmethod  # 抽象方法：子类必须实现这个方法
-    def _calc_r_in(self):  # in [pc]
+    def _calc_r_in(self):
         pass
     
     @u.quantity_input
     def r_with_feedback(self, r: Quantity['length']) -> Quantity[u.pc]:
-        """考虑 feedback 反馈效果时，从尘埃原位置 r 到新位置 r' 的映射。  
+        """Mapping from original dust position r to new position r' considering feedback effects.
+        For models without feedback, r' = r.
+
+        考虑 feedback 反馈效果时，从尘埃原位置 r 到新位置 r' 的映射。  
         对于无反馈的模型，r' = r。
         """
         return r
@@ -136,8 +162,8 @@ class LRD_IR_ModelBase(ABC):
     @u.quantity_input
     def NH_profile_inverse(self, NH: Quantity['column density']) -> Quantity[u.pc]:
         """Inverse function of NH_profile. For given NH, find r.
-        
-        NH in cgs unit, r in pc.
+
+        NH_profile 的反函数。给定 NH，计算对应的 r。
         """
         gamma = self.gamma
         factor: Quantity[''] = NH / (self.n_0 * self.r_in)
@@ -154,7 +180,10 @@ class LRD_IR_ModelBase(ABC):
     @property
     @u.quantity_input
     def NH_max(self) -> Quantity[u.cm**-2]:
-        """返回当前气体密度分布参数 (n_0, gamma, r_in) 下的最大可能 NH"""
+        """Maximum possible NH for current gas density distribution parameters.
+
+        返回当前气体密度分布参数 (n_0, gamma, r_in) 下的最大可能 NH。
+        """
         gamma = self.gamma
         if gamma > 1:
             return self.n_0 * self.r_in / (self.gamma - 1)  # gamma > 1 时，NH_max = n_0 * r_in / (gamma - 1)，否则无穷大。
@@ -319,7 +348,10 @@ class LRD_IR_ModelBase(ABC):
     @property
     @u.quantity_input
     def M_gas(self) -> Quantity[u.Msun]:
-        """返回当前气体密度分布参数 (n_0, gamma, r_in, r_out) 对应的气体质量 M_gas"""
+        """Calculate gas mass M_gas for current density distribution parameters.
+
+        返回当前气体密度分布参数 (n_0, gamma, r_in, r_out) 对应的气体质量 M_gas。
+        """
         from astropy.constants import m_p
         gamma = self.gamma
         r_ratio = self.r_out / self.r_in
@@ -330,7 +362,10 @@ class LRD_IR_ModelBase(ABC):
     
     @u.quantity_input
     def r_out_from_M_gas(self, M_gas: Quantity[u.Msun]) -> Quantity[u.pc]:
-        """根据给定的 M_gas 计算 r_out"""
+        """Calculate r_out for given M_gas.
+
+        根据给定的 M_gas 计算 r_out。
+        """
         from astropy.constants import m_p
         gamma = self.gamma
         if gamma == 3:  # 目前没有处理 gamma == 3，因为目前探究的参数空间还不涉及 gamma == 3
@@ -341,6 +376,9 @@ class LRD_IR_ModelBase(ABC):
 
     @u.quantity_input
     def NH_max_from_M_gas(self, M_gas: Quantity[u.Msun]) -> Quantity[u.cm**-2]:
-        """根据给定的 M_gas 计算 NH_max"""
+        """Calculate NH_max for given M_gas.
+
+        根据给定的 M_gas 计算 NH_max。
+        """
         r_out = self.r_out_from_M_gas(M_gas)
         return self.NH_profile(r_out)
