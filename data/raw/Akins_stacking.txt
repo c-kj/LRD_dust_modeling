@@ -1,0 +1,33 @@
+# Table 4 
+# Observed-frame Stacking Results
+
+
+Band	Wavelength	N	Units	F_nu	
+Chandra 2-10 keV^a	0.28 nm	434	erg s^-1 cm^-2	<7.2 x 10^-17	
+Chandra 0.5-2 keV^a	1.24 nm	434	erg s^-1 cm^-2	<1.1 x 10^-17	
+HST/ACS F606W	0.60 mum	29	nJy	< 3.85	
+HST/ACS F814W	0.81 mum	434	nJy	4.11 +or- 0.52	
+JWST/NIRCam F090W	0.90 mum	29	nJy	7.37 +or- 1.22	
+JWST/NIRCam F115W	1.16 mum	434	nJy	15.76 +or- 0.62	
+JWST/NIRCam F150W	1.50 mum	434	nJy	16.46 +or- 0.51	
+JWST/NIRCam F200W	2.00 mum	29	nJy	17.66 +or- 0.77	
+JWST/NIRCam F277W	2.77 mum	434	nJy	30.51 +or- 0.23	
+JWST/NIRCam F356W	3.58 mum	29	nJy	83.30 +or- 0.56	
+JWST/NIRCam F410M	4.08 mum	29	nJy	113.56 +or- 1.03	
+JWST/NIRCam F444W	4.42 mum	434	nJy	173.00 +or- 0.33	
+JWST/MIRI F770W	7.66 mum	148	nJy	277.99 +or- 2.94	
+JWST/MIRI F1800W	18.00 mum	24	nJy	(435.2 +or- 150.9)	
+Spitzer/MIPS	24 mum	434	muJy	<3.43	
+Spitzer/MIPS	70 mum	434	mJy	<0.36	
+Herschel/PACS	100 mum	434	mJy	<0.40	
+Herschel/PACS	160 mum	434	mJy	<0.82	
+Herschel/SPIRE	250 mum	434	mJy	<0.65	
+Herschel/SPIRE	350 mum	434	mJy	<0.86	
+Herschel/SPIRE	500 mum	434	mJy	<1.24	
+SCUBA-2	850 mum	434	muJy	<239	
+ALMA	1.2 mm	30	muJy	<157	
+ALMA	2.0 mm	128	muJy	<35.4	
+VLA 3 GHz	10 cm	434	uJy	<0.56	
+MeerKAT 1.28 GHz	23 cm	434	uJy	<1.80	
+# Note.
+# ^a For Chandra, we quote the absolute flux limit (rather than flux density) to be consistent with X-ray surveys. Uncertainties are quoted as 1sigma; for nondetections, we quote the 5sigma upper limits.
