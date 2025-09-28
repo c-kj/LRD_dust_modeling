@@ -316,7 +316,7 @@ class OrionLRDModel(EnergyBalanceModel):
         来自于在 r == r_in 处的能量平衡 UV_Flux == IR_Flux，而 UV_Flux 由于 tau == 0 所以随 r 是平方反比的，可以直接从中解出 r_in 的值。  
         目前是仿照 UV_Flux 单独写了一遍。也许可以改为调用 UV_Flux 方法，从而确保一致性。
         """
-        IR_Flux = self.IR_Flux(self.T_sub)
+        IR_Flux = self.opacity.IR_Flux(self.T_sub)
         
         incident_SED = self.incident_SED
         nu_array = incident_SED.nu
