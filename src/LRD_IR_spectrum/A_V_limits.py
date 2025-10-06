@@ -105,8 +105,18 @@ def calc_A_V_max_for_model_factory(*,
         calc_index_diff(A_V=A_V_max)
     except R_out_Error:  # 说明是被 NH_max 限制住了
         constrained_by = Constraint.NH_MAX
+        
     
-    return A_V_max, res, constrained_by, index, diff, #, calc_index_diff.cache_info()  #FUTURE 目前直接以 tuple 返回，后续可以改成一个 dataclass 或 namedtuple 之类的
+    model = model_factory(A_V=A_V_max)
+    try:
+        M_gas = model.M_gas
+    except R_out_Error:  # 在 ignore_UV 时，在某些参数下会出现 R_out_Error。
+        # 这种情况下 A_V 都很小 (~1e-5)，可能是因为数值误差。因此，干脆直接返回 M_gas 为 0 吧！不影响结果
+        # logger.warning("R_out_Error encountered!")
+        raise       #* 目前先尝试直接 raise，如果真的遇到 R_out_Error 再处理
+        M_gas = 0 * u.Msun
+    
+    return A_V_max, res, constrained_by, index, diff, M_gas #, calc_index_diff.cache_info()  #FUTURE 目前直接以 tuple 返回，后续可以改成一个 dataclass 或 namedtuple 之类的
 
 
 

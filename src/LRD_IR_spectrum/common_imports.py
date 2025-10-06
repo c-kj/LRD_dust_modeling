@@ -8,6 +8,7 @@ from LRD_IR_spectrum.common_imports import *
 ```
 """
 from functools import partial
+from itertools import product
 
 import numpy as np
 from scipy import integrate, optimize
@@ -20,5 +21,9 @@ from astropy.units import Quantity
 from astropy.table import Table, QTable
 from astropy.visualization import quantity_support
 quantity_support()  
+
+# 用于并行 paras survey
+from joblib import Parallel, delayed
+from tqdm.auto import tqdm
 
 __doc__ += f"导入的名称有：\n{', '.join([name for name in dir() if not name.startswith('_')])}"

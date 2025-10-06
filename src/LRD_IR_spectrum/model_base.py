@@ -352,6 +352,7 @@ class LRD_IR_ModelBase(ABC):
 
         返回当前气体密度分布参数 (n_0, gamma, r_in, r_out) 对应的气体质量 M_gas。
         """
+        #* Note: M_gas 实际上依赖于 opacity 的选取。这主要是因为 opacity 会决定 UV_Flux 从而决定 r_in；次要因素是不同的 opacity 的 sigma_H_ext_V 略有不同。
         from astropy.constants import m_p
         gamma = self.gamma
         r_ratio = self.r_out / self.r_in
