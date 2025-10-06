@@ -143,6 +143,16 @@ class SED:
         return cls(nu=qtable['nu_rest'], L_nu=qtable['Lnu_rest'])  # 假定 qtable 中有这两列数据
 
 
+def get_SED_detection(SED_table: QTable, *, refine_num: int = 100):
+    """把 SED_table 中所有探测到的点连起来，返回一个 SED 对象，用于输入给 model 的 observed SED
+    
+    refine_num 指定要 refine 多少个点。默认为 100，这是为了对 incident SED 积分时更细密。
+    """
+    #* 目前隐含假定所有 detection 之间是连续的，也即，不存在一段 detection 之后是一段 non-detection，然后又是 detection。如果出现这种情况，这个函数会把他们直接连起来，结果就不对了。
+    mask = SED_table['detection']  # 筛选出 detection 的数据。这里假定 SED_table 中有这一列数据。
+    return SED.from_QTable(SED_table[mask]).refine(refine_num)
+
+
 def IncidentSED(filename: str):
     raise DeprecationWarning("IncidentSED is deprecated, please use SED.from_file instead.") 
         
