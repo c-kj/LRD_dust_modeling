@@ -1,5 +1,5 @@
 from functools import partial
-from typing import override
+from typing import override, Callable, Protocol
 from numbers import Real
 
 import numpy as np
@@ -78,7 +78,9 @@ def de_redden_SED(*, observed_SED: SED, A_V: MagnitudeLike, opacity: OpacityData
 
 class A_V_Model(OrionLRDModel):
     """根据指定的 A_V，从 observed_SED 还原出 incident_SED，并计算相应的 NH_target 的模型。  
-    用于从观测数据限制 A_V 的上限。    
+    用于从观测数据限制 A_V 的上限。  
+    
+    observed_SED 实际上是用于 de-redden 的。不应当包含 non-detection 的数据。
     """
     
     @u.quantity_input
@@ -158,3 +160,12 @@ class A_V_Model(OrionLRDModel):
         N_H_max = self.NH_max  # 有可能是 np.inf * u.cm**-2，但同样能正确计算
         tau_max = N_H_max * self.opacity.sigma_H_ext_V
         return A_from_tau(tau_max)
+
+# A_V_Model 的 factory 的类型定义
+class Partial_A_V_Model(Protocol):
+    """一个 Protocol，表示一个类似 partial 对象的东西，接收 A_V 以及可选的其他 kwargs，返回一个 A_V_Model 对象。
+    """
+    def __call__(self, A_V: MagnitudeLike, /, **kwargs) -> A_V_Model:
+        ...
+        
+A_V_ModelFactory = Callable[[MagnitudeLike], A_V_Model]  # 一个类型，只接收 A_V 一个参数，返回一个 A_V_Model 对象
