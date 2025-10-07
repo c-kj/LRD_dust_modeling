@@ -2,6 +2,7 @@
 import logging
 from functools import partial, lru_cache
 from enum import IntEnum
+from dataclasses import dataclass
 
 import numpy as np
 from scipy import optimize
@@ -22,6 +23,17 @@ class Constraint(IntEnum):
     RE_EMISSION = 1
     NH_MAX = 2
     M_DUST = 3
+    
+@dataclass
+class A_V_max_Result:
+    """用于存储 calc_A_V_max_for_model_factory 的结果"""
+    A_V_max: float
+    root_result: optimize.RootResults
+    constrained_by: Constraint
+    crit_index: int
+    diff: float
+    M_gas: Quantity
+
 
 def model_constraint_diff(model: A_V_Model, constraint_SED: SED) -> tuple[int, float]:
     """计算 model 和 constraint_SED 之间的 log diff，返回 diff 最大点的 index 和 diff 值
@@ -116,7 +128,14 @@ def calc_A_V_max_for_model_factory(*,
         raise       #* 目前先尝试直接 raise，如果真的遇到 R_out_Error 再处理
         M_gas = 0 * u.Msun
     
-    return A_V_max, res, constrained_by, index, diff, M_gas #, calc_index_diff.cache_info()  #FUTURE 目前直接以 tuple 返回，后续可以改成一个 dataclass 或 namedtuple 之类的
+    return A_V_max_Result(
+        A_V_max=A_V_max, 
+        root_result=res, 
+        constrained_by=constrained_by, 
+        crit_index=index, 
+        diff=diff, 
+        M_gas=M_gas
+    )
 
 
 

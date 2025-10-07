@@ -84,6 +84,7 @@ class ParasSurveyPlot:
         return
 
     def add_text(self, ax: Axes,):
+        raise NotImplementedError("This function is deprecated!")
         # 用文本标出各个区域的关键限制波段
         # if True:
         #    _text_props = dict(ha='center', va='center', color='w', fontsize=11)
@@ -91,13 +92,6 @@ class ParasSurveyPlot:
         #    ax.text(.16, 3.6, "MIRI\nF2100W", **_text_props)
         #    ax.text(.16, 4.6, "MIRI\nF1000W", **_text_props)
         #    ax.text(1.5, 1, r"$r_{\rm out} \geq 10~{\rm kpc}$", **_text_props)  #TEMP
-
-        if True:
-            _text_props = dict(ha='center', va='center', color='w', fontsize=10)
-            ax.text(.16, 0.3, "ALMA", **_text_props)
-            ax.text(.16, 4.0, "MIRI\nF2100W", **_text_props)
-            ax.text(.16, 4.75, "MIRI\nF1000W", **_text_props)
-            ax.text(1.5, 1, r"$r_{\rm out} \geq 10~{\rm kpc}$", **_text_props)  #TEMP
 
         return
 
@@ -128,12 +122,12 @@ class ParasSurveyPlot:
                     # manual=[]  # 手动指定标签位置,
                     )  #TODO: 怎么让它只显示 10^x，不要 k * 10^x ? cntr.cvalues
 
-    def add_markers_for_paras_list(self, ax: Axes, paras_list: list[tuple[float, Quantity]],):
+    def add_markers_for_paras_list(self, ax: Axes, paras_list: list[tuple[float, Quantity]], fig_ref: str,):
         typical_gammas, typical_n_0s = zip(*paras_list)
         typical_n_0s = Quantity(typical_n_0s)
         ax.scatter(typical_gammas, np.log10(typical_n_0s.value), 
                         marker='*', facecolors='none', color="#ff9650", lw=1.5, s=10**2, 
-                        label=r'$(\gamma, n_0)$ in Fig.2b', zorder=100, 
+                        label=rf'$(\gamma, n_0)$ in {fig_ref}', zorder=100, 
                         clip_on=False,
                         )
 
@@ -147,6 +141,7 @@ class ParasSurveyPlot:
         constraint_array: np.ndarray[Constraint],
         M_dust_array: Quantity,
         paras_list: list[tuple[float, Quantity]] | None = None,  # (gamma, n_0) 列表
+        fig_ref: str | None = None,
     ):
 
         NH_MAX_mask = (constraint_array==Constraint.NH_MAX)
@@ -159,16 +154,18 @@ class ParasSurveyPlot:
             #   figsize=(6.4, 4.8)
         )
 
+        # 这里画图的先后顺序会影响图层顺序，后画的在上面
+
         p, cbar = self.plot_A_V_max(fig=fig, ax=ax, A_V_max_array=A_V_max_array)
         self.plot_region_NH_MAX(ax=ax, constraint_array=constraint_array)
         self.plot_M_dust_contour(ax=ax, M_dust_array=M_dust_array, NH_MAX_mask=NH_MAX_mask)
         self.plot_crit_wavelength(ax=ax, crit_index_array=crit_index_array, NH_MAX_mask=NH_MAX_mask)
 
         # self.add_text(ax=ax)
-        
+
         # 与 Fig.2b 中的几个典型参数对应的点
         if paras_list is not None:
-            self.add_markers_for_paras_list(ax=ax, paras_list=paras_list,)
+            self.add_markers_for_paras_list(ax=ax, paras_list=paras_list, fig_ref=fig_ref)
 
         # #TEMP 尝试 T_out
         # ax.contour(gamma_array, np.log10(n_0_array.value),
@@ -183,7 +180,7 @@ class ParasSurveyPlot:
         #            )
 
         # * 需要根据不同的图在外部进行的操作：set_title, savefig, 加上 text
-        
+
         return fig, ax
 
         # fig.savefig(f'figures/paras_survey/{_opacity_name}_Tfloor=30_large_6.png', bbox_inches='tight')
@@ -193,3 +190,19 @@ class ParasSurveyPlot:
         # fig.savefig(f'figures/paras_survey/ignore_UV/{_opacity_name}_Tfloor=30_ignore_UV_6.png', bbox_inches='tight')
 
         # fig.savefig(f'figures/paras_survey/Delvecchio_{_opacity_name}_Tfloor=30_1.pdf', bbox_inches='tight')
+
+    def plot_figure_from_dict(
+        self,
+        *,
+        data_dict: dict,
+        paras_list: list[tuple[float, Quantity]] | None = None,  # (gamma, n_0) 列表
+        fig_ref: str | None = None,
+    ):
+        return self.plot_figure(
+            A_V_max_array=data_dict['A_V_max'],
+            crit_index_array=data_dict['crit_index'],
+            constraint_array=data_dict['constrained_by'],
+            M_dust_array=data_dict['M_dust'],
+            paras_list=paras_list,
+            fig_ref=fig_ref,
+        )

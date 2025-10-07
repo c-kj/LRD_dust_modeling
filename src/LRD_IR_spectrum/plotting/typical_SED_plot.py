@@ -206,12 +206,12 @@ class TypicalSEDPlot:
         ax.set_title(rf"Maximizing $A_V$ for different $(\gamma, n_0)$") 
 
         for gamma, n_0 in paras_list:
-            A_V, *_args = self._calc_A_V_max(gamma=gamma, n_0=n_0)
+            A_V = self._calc_A_V_max(gamma=gamma, n_0=n_0).A_V_max
             model = self.model_factory(n_0=n_0, gamma=gamma, A_V=A_V)
             color = cmap(norm(A_V))
 
             _line_2, = ax.loglog(model.opacity.wavelength, model.calc_nu_L_nu(), 
-                          label=rf'{A_V:.2f} mag ($\gamma$={gamma:.1f}, $n_0$={fmt(n_0)})', color=color)
+                          label=rf'{A_V:.2f} mag ($\gamma$={gamma:.2f}, $n_0$={fmt(n_0)})', color=color)
             handles_ax1_right.append(_line_2)
 
             # IR re-emission + observed SED:

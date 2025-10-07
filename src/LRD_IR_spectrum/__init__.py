@@ -6,7 +6,7 @@ from .OrionLRD import EnergyBalanceModel, L_UV_Model, OrionLRDModel
 from .A_V_model import N_H_from_A_V, de_redden_SED, A_V_Model, MagnitudeLike, Partial_A_V_Model, A_V_ModelFactory
 from .utils import Planck_B_nu, ScaledInterpolator, LinearInterpolator, LogLogInterpolator, LogLinearInterpolator, trapz_log, quantity_to_latex
 from .cosmology import f_nu_from_L_nu_rest, L_nu_rest_from_f_nu
-from .A_V_limits import Constraint, calc_A_V_max_for_model_factory, calc_A_V_max_for_paras
+from .A_V_limits import Constraint, A_V_max_Result, calc_A_V_max_for_model_factory, calc_A_V_max_for_paras
 
 from .reload import deep_reload
 
