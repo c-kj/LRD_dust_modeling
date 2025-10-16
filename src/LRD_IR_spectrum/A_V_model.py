@@ -66,11 +66,11 @@ def N_H_from_A_V(A_V: MagnitudeLike, opacity: OpacityData) -> Quantity[u.cm**-2]
     return tau_V / opacity.sigma_H_ext_V
 
 
-def de_redden_SED(*, observed_SED: SED, A_V: MagnitudeLike, opacity: OpacityData) -> SED:
+def de_redden_SED(*, observed_SED: SED, A_V: MagnitudeLike, opacity: OpacityData, f_scat: float = 0.) -> SED:
     """对于观测到的 observed_SED，根据 A_V 和指定的 opacity 计算 de-reddened SED"""
     A_V = to_magnitude(A_V)  # 把 A_V 统一为 Magnitude 表示
     A_lambda: Magnitude = A_V * (opacity.interp_ext(observed_SED.nu) / opacity.sigma_H_ext_V)  # A_lambda 是对应于 observed_SED.nu 的各个波长的消光值数组。# 可以考虑改名为 A_nu
-    de_reddened_L_nu = observed_SED.L_nu / A_lambda.physical  # .physical 把 A_lambda 转化为消光的比率
+    de_reddened_L_nu = observed_SED.L_nu / (f_scat + (1-f_scat) * A_lambda.physical)  # .physical 把 A_lambda 转化为消光的比率
 
     return SED(nu=observed_SED.nu, L_nu=de_reddened_L_nu)
 
@@ -93,6 +93,7 @@ class A_V_Model(OrionLRDModel):
         opacity: OpacityData,
         observed_SED: SED,  #* 这里必须输入的是 rest frame 的 nu 和 L_nu！ #TODO 强调这里必须是 rest frame
         tau_ph = 1, # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
+        f_scat = 0.0,  # scattering fraction of the incident SED, as in Akins+25
         config: dict = {},
         ):
         
@@ -104,7 +105,7 @@ class A_V_Model(OrionLRDModel):
         
         # 计算需要传递给父类的参数
         NH_target = N_H_from_A_V(A_V, opacity=opacity)
-        de_reddened_SED = de_redden_SED(observed_SED=observed_SED, A_V=A_V, opacity=opacity)  # 计算 de-reddened SED
+        de_reddened_SED = de_redden_SED(observed_SED=observed_SED, A_V=A_V, opacity=opacity, f_scat=f_scat)  # 计算 de-reddened SED
         
         # 调用父类的 __init__ 
         super().__init__(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, incident_SED=de_reddened_SED, tau_ph=tau_ph, config=config)
