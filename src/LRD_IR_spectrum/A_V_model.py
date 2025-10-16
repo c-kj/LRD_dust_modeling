@@ -148,18 +148,19 @@ class A_V_Model(OrionLRDModel):
     
     
     # M_dust 的限制
-    def A_V_max_from_M_gas(self, M_gas: Quantity[u.Msun]) -> Magnitude:
-        """根据给定的 M_gas 计算 A_V 的上限。  
+    def A_V_out_from_M_gas(self, M_gas: Quantity[u.Msun]) -> Magnitude:
+        """对于输入的 M_gas 计算对应的 r_out 处的 A_V，即 A_V_out。  
+        可以用于根据 M_dust_max 限制 A_V_max。
         """
-        N_H_max = self.NH_max_from_M_gas(M_gas)
-        tau_max = N_H_max * self.opacity.sigma_H_ext_V
-        return A_from_tau(tau_max)
+        N_H_out = self.NH_out_from_M_gas(M_gas)
+        tau_V_out = N_H_out * self.opacity.sigma_H_ext_V
+        return A_from_tau(tau_V_out)
 
     @property
     def A_V_max_from_NH_max(self):
         N_H_max = self.NH_max  # 有可能是 np.inf * u.cm**-2，但同样能正确计算
-        tau_max = N_H_max * self.opacity.sigma_H_ext_V
-        return A_from_tau(tau_max)
+        tau_V_max = N_H_max * self.opacity.sigma_H_ext_V
+        return A_from_tau(tau_V_max)
 
 # A_V_Model 的 factory 的类型定义
 class Partial_A_V_Model(Protocol):

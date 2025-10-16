@@ -376,10 +376,10 @@ class LRD_IR_ModelBase(ABC):
     
 
     @u.quantity_input
-    def NH_max_from_M_gas(self, M_gas: Quantity[u.Msun]) -> Quantity[u.cm**-2]:
-        """Calculate NH_max for given M_gas.
+    def NH_out_from_M_gas(self, M_gas: Quantity[u.Msun]) -> Quantity[u.cm**-2]:
+        """Calculate NH_out for given M_gas.
 
-        根据给定的 M_gas 计算 NH_max。
+        根据给定的 M_gas 计算 NH_out，即 r_out 处的 NH。
         """
         r_out = self.r_out_from_M_gas(M_gas)
         return self.NH_profile(r_out)
