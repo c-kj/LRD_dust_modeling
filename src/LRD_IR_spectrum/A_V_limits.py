@@ -1,7 +1,9 @@
 # calc_A_V_max 系列函数的定义
 import logging
-from functools import partial, lru_cache
 from enum import IntEnum
+from functools import partial, lru_cache
+from itertools import product
+import dataclasses
 from dataclasses import dataclass
 
 import numpy as np
@@ -9,8 +11,12 @@ from scipy import optimize
 import astropy.units as u
 from astropy.units import Quantity
 
+from joblib import Parallel, delayed
+from tqdm.auto import tqdm
+
+
 from .model_base import R_out_Error
-from .A_V_model import A_V_Model, A_V_ModelFactory
+from .A_V_model import A_V_Model, A_V_ModelFactory, Partial_A_V_Model
 from .incident_SED import SED
 
 
@@ -23,7 +29,7 @@ class Constraint(IntEnum):
     RE_EMISSION = 1
     NH_MAX = 2
     M_DUST = 3
-    
+
 @dataclass
 class A_V_max_Result:
     """用于存储 calc_A_V_max_for_model_factory 的结果"""
@@ -32,8 +38,27 @@ class A_V_max_Result:
     constrained_by: Constraint
     crit_index: int
     diff: float
+    model: A_V_Model  # 储存对应 A_V_max 的 model，方便提取各种属性，比如 r_out, T_out 等，不用重新由 gamma, n_0, A_V 计算
     M_gas: Quantity
 
+
+def extract_dataclass_fields_to_dict[T](list_of_dataclass: list[T], dataclass_type: type[T] = None) -> dict[str, list]:
+    """从 list_of_dataclass 中的每一项中，自动提取 dataclass 的所有 field，组成列表。  
+    这些列表组成一个 dict，相应的 key 为 field_name
+    
+    把 list of dataclass 转换为 dict of list: list[T] -> dict[str, list[Any]]
+    """
+    if dataclass_type is None:
+        dataclass_type: type[T] = list_of_dataclass[0].__class__  # 假设 list_of_dataclass 非空，且所有元素都是同一类型
+    field_names = [field.name for field in dataclasses.fields(dataclass_type)]
+
+    return {
+        field_name: [getattr(item, field_name) for item in list_of_dataclass]
+        for field_name in field_names
+    }
+
+
+# -------------------- A_V_max from re-emission constraint ------------------- #
 
 def model_constraint_diff(model: A_V_Model, constraint_SED: SED) -> tuple[int, float]:
     """计算 model 和 constraint_SED 之间的 log diff，返回 diff 最大点的 index 和 diff 值
@@ -47,7 +72,6 @@ def model_constraint_diff(model: A_V_Model, constraint_SED: SED) -> tuple[int, f
     return index, diff[index]
 
 
-# TODO 改名
 def calc_A_V_max_for_model_factory(*, 
                  model_factory: A_V_ModelFactory,
                  constraint_SED: SED,
@@ -125,7 +149,8 @@ def calc_A_V_max_for_model_factory(*,
     except R_out_Error:  # 在 ignore_UV 时，在某些参数下会出现 R_out_Error。
         # 这种情况下 A_V 都很小 (~1e-5)，可能是因为数值误差。因此，干脆直接返回 M_gas 为 0 吧！不影响结果
         # logger.warning("R_out_Error encountered!")
-        raise       #* 目前先尝试直接 raise，如果真的遇到 R_out_Error 再处理
+        # raise       #* 目前先尝试直接 raise，如果真的遇到 R_out_Error 再处理
+        logger.warning("R_out_Error, setting M_gas = 0")
         M_gas = 0 * u.Msun
     
     return A_V_max_Result(
@@ -134,9 +159,9 @@ def calc_A_V_max_for_model_factory(*,
         constrained_by=constrained_by, 
         crit_index=index, 
         diff=diff, 
+        model=model,
         M_gas=M_gas
     )
-
 
 
 def calc_A_V_max_for_paras(*, gamma: float, n_0: Quantity,
@@ -149,3 +174,62 @@ def calc_A_V_max_for_paras(*, gamma: float, n_0: Quantity,
     """
     _model_factory = partial(model_factory, n_0=n_0, gamma=gamma)  # 用 gamma, n_0 来覆写 model_factory 中的参数
     return calc_A_V_max_for_model_factory(model_factory=_model_factory, constraint_SED=constraint_SED)
+
+
+def calc_A_V_max_array_in_paras_space(
+    *,
+    gamma_array: np.ndarray,
+    n_0_array: Quantity,
+    model_factory: A_V_ModelFactory,
+    constraint_SED: SED,
+):
+
+    _calc_A_V_max_for_paras = partial(
+        calc_A_V_max_for_paras,
+        model_factory=model_factory,
+        constraint_SED=constraint_SED,
+    )
+
+    # 这里直接返回一个 list 吧，不搞流式了，因为最后 ndarray 的 reshape 是必须要全部计算完才能做的
+    A_V_max_result_list = Parallel()(
+        delayed(_calc_A_V_max_for_paras)(gamma=gamma, n_0=n_0) for n_0, gamma in tqdm(list(product(n_0_array, gamma_array)), desc="paras survey", leave=False)  # 外层循环 y 轴，内层循环 x 轴
+    )
+    
+    A_V_max_result_list = list(A_V_max_result_list)
+
+    A_V_max_result_dict = extract_dataclass_fields_to_dict(A_V_max_result_list, A_V_max_Result)
+    
+    shape = (len(n_0_array), len(gamma_array))
+    A_V_max_array = np.asarray(A_V_max_result_dict['A_V_max']).reshape(shape)
+
+    return A_V_max_array
+
+# ------------------------ A_V_max from M_gas (M_dust) ----------------------- #
+
+    
+def calc_A_V_max_from_M_gas_intersection(
+    *, model_factory: A_V_ModelFactory, M_gas: Quantity
+):
+    np.seterr(over='ignore', divide='ignore')  # 忽略 overflow 和 divide by zero 的警告
+    
+    xmin, xmax = [0, 15]
+    try:
+        return optimize.root_scalar(
+            lambda A_V: model_factory(A_V=A_V).A_V_out_from_M_gas(M_gas).value - A_V,
+            bracket=[xmin, xmax],
+            method='brentq',
+            xtol=1e-6,
+            rtol=1e-3,
+        ).root
+    except ValueError as e:  # 处理 ValueError: f(a) and f(b) must have different signs
+        print(f"An Error occured during root-finding: {e}")
+        print(f"{model_factory.keywords = }, {M_gas = }")
+        
+        return xmax  #TEMP 目前懒得处理，没弄清楚出现同号到底是啥情况。暂时返回一个大数 xmax
+
+
+def calc_A_V_max_from_M_gas_intersection_for_paras(
+    *, gamma: float, n_0: Quantity, M_gas: Quantity, model_factory: Partial_A_V_Model,
+):
+    _model_factory = partial(model_factory, n_0=n_0, gamma=gamma)  # 用 gamma, n_0 来覆写 model_factory 中的参数
+    return calc_A_V_max_from_M_gas_intersection(model_factory=_model_factory, M_gas=M_gas)

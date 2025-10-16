@@ -23,6 +23,7 @@ from astropy.visualization import quantity_support
 quantity_support()  
 
 # 用于并行 paras survey
+import joblib
 from joblib import Parallel, delayed
 from tqdm.auto import tqdm
 
