@@ -170,3 +170,59 @@ class Partial_A_V_Model(Protocol):
         ...
         
 A_V_ModelFactory = Callable[[MagnitudeLike], A_V_Model]  # 一个类型，只接收 A_V 一个参数，返回一个 A_V_Model 对象
+
+
+
+# ----------------------------------- 带有缝隙的 model ----------------------------------- #
+
+class A_V_Model_with_Gap(A_V_Model):
+    """在 A_V_Model 的基础上，增加了缝隙 (gap) 的功能。  
+    主要是为了模拟 Sakiko 的 ID830 源。
+    
+    两个成分：视线方向的 A_V_gap，和非视线方向的 A_V_torus。实际上这俩名字不太好，不该叫 gap，就应该叫 line-of-sight 之类的。
+    计算 incident_SED 时，只用视线方向的 A_V；计算 re-emission 时，用视线方向和非视线方向的 A_V 的加权和（分别乘以各自的 covering factor）
+    #? 这俩成分应该有共同的 gamma, n_0 吗？
+    #* 应该分成俩 model 来计算，但目前临时，只考虑 gap 的情形，也就是 line-of-sight 组分的 A_V 很小而且 covering factor 也很小。
+    #* 这样，re-emission 中只考虑了非视线方向的贡献（f_cover ~ 1）
+    """
+    
+
+    @u.quantity_input
+    def __init__(self,
+        *,  # 以下参数必须用关键字指定
+        n_0: Quantity['number density'],
+        gamma: float,
+        T_sub: Quantity['temperature'],
+        A_V_torus: MagnitudeLike,
+        A_V_gap: MagnitudeLike,
+        opacity: OpacityData,
+        observed_SED: SED,  #* 这里必须输入的是 rest frame 的 nu 和 L_nu！ #TODO 强调这里必须是 rest frame
+        tau_ph = 1, # feedback 将内区的 dust 吹到某个 r_ph 位置堆积。这是对应的光深。
+        config: dict = {},
+        ):
+        
+        A_V_torus = to_magnitude(A_V_torus)  # 把 A_V 统一为 Magnitude 表示
+        A_V_gap = to_magnitude(A_V_gap)  # 把 A_V 统一为 Magnitude 表示
+        
+        # 记录参数
+        self.A_V_torus = A_V_torus
+        self.A_V_gap = A_V_gap
+        self.observed_SED = observed_SED
+        
+        # 计算需要传递给父类的参数
+        NH_target = N_H_from_A_V(A_V_torus, opacity=opacity)
+        de_reddened_SED = de_redden_SED(observed_SED=observed_SED, A_V=A_V_gap, opacity=opacity)  # 计算 de-reddened SED
+        
+        # 调用父类的 __init__ 
+        super(A_V_Model, self).__init__(n_0=n_0, gamma=gamma, T_sub=T_sub, NH_target=NH_target, opacity=opacity, incident_SED=de_reddened_SED, tau_ph=tau_ph, config=config)
+
+        #TEMP 目前没有实现 f_cover
+        
+    @override
+    def _repr_latex_(self):
+        fmt = partial(quantity_to_latex, p=4)
+        return rf"""{self.__class__.__name__}( $n_0=$ {fmt(self.n_0)}, $\gamma={self.gamma}$, 
+        $A_{{V, torus}}=$ {fmt(self.A_V_torus.to(u.mag))}, $A_{{V, gap}}=$ {fmt(self.A_V_gap.to(u.mag))}, $N_{{\rm H}}=$ {fmt(self.NH_target)}, $\tau_{{\rm ph}}={self.tau_ph}$, 
+        $r_{{\rm in}}=$ {fmt(self.r_in)}, $r_{{\rm ph}}=$ {fmt(self.r_ph)}, $r_{{\rm out}}=$ {fmt(self.r_out)}, 
+        $T_{{\rm sub}}=$ {fmt(self.T_sub)}, $T_{{\rm out}}=$ {fmt(self.T_out)} )
+        """
