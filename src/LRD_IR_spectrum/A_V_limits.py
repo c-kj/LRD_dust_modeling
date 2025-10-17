@@ -176,6 +176,27 @@ def calc_A_V_max_for_paras(*, gamma: float, n_0: Quantity,
     return calc_A_V_max_for_model_factory(model_factory=_model_factory, constraint_SED=constraint_SED)
 
 
+def calc_A_V_max_for_paras_list(*, paras_list: list[tuple[float, Quantity]],
+                 model_factory: A_V_ModelFactory,
+                 constraint_SED: SED,
+                 ):
+    """对于 paras survey 中的参数列表 paras_list, 计算其对应的 A_V_max 列表。  
+    
+    实际上就是在 calc_A_V_max_for_model_factory 的基础上，覆盖其 gamma, n_0 参数。
+    """
+    _calc_A_V_max_for_paras = partial(
+        calc_A_V_max_for_paras,
+        model_factory=model_factory,
+        constraint_SED=constraint_SED,
+    )
+
+    A_V_max_result_list = Parallel(return_as='generator')(
+        delayed(_calc_A_V_max_for_paras)(gamma=gamma, n_0=n_0) for gamma, n_0 in tqdm(paras_list, desc="paras survey", leave=False)  # 外层循环 y 轴，内层循环 x 轴
+    )
+    
+    return A_V_max_result_list
+
+
 def calc_A_V_max_array_in_paras_space(
     *,
     gamma_array: np.ndarray,
@@ -189,7 +210,8 @@ def calc_A_V_max_array_in_paras_space(
         model_factory=model_factory,
         constraint_SED=constraint_SED,
     )
-
+    
+    #* 这里暂时没有改成用上面的 calc_A_V_max_for_paras_list 函数，因为二重循环的顺序比较 tricky，怕搞错
     # 这里直接返回一个 list 吧，不搞流式了，因为最后 ndarray 的 reshape 是必须要全部计算完才能做的
     A_V_max_result_list = Parallel()(
         delayed(_calc_A_V_max_for_paras)(gamma=gamma, n_0=n_0) for n_0, gamma in tqdm(list(product(n_0_array, gamma_array)), desc="paras survey", leave=False)  # 外层循环 y 轴，内层循环 x 轴

@@ -2,6 +2,7 @@
 
 from functools import partial
 
+from matplotlib import hatch
 import numpy as np
 import astropy.units as u
 from astropy.units import Quantity
@@ -27,9 +28,12 @@ class ParasSurveyPlot:
         self.n_0_array = n_0_array
 
     def set_style(self):
+        import scienceplots
         plt.rcdefaults()
+        plt.style.use(['science', ])
+        plt.rcParams['legend.frameon'] = True
+        # plt.rcParams['legend.framealpha'] = .8
         plt.rcParams['font.size'] = 12
-        plt.rcParams['legend.fontsize'] = 'small'
 
     def plot_A_V_max(self, *, fig: Figure, ax: Axes, A_V_max_array: np.ndarray[float],):
         gamma_array = self.gamma_array
@@ -49,7 +53,7 @@ class ParasSurveyPlot:
         ax.set_ylabel(r"$\log_{10} n_0$ [${\rm cm}^{-3}$]")
 
         # colorbar
-        cbar = fig.colorbar(p, ax=ax, label=r"$A_V$ limit [mag]")
+        cbar = fig.colorbar(p, ax=ax, label=r"Maximum allowed $A_V$ [mag]")
 
         return p, cbar
 
@@ -113,7 +117,7 @@ class ParasSurveyPlot:
         fmt = partial(quantity_to_latex, formatter='e')  # 用于格式化 Quantity  # 取 e 是
         _clabel_props = dict(use_clabeltext=True, fontsize=10,)
         cntr.clabel(levels=cntr.levels[:1], fmt=lambda M: rf'$M_{{\rm dust}}$ = {fmt(M * u.Msun)}', **_clabel_props)  # 把第一条线单独拎出来，写全变量和单位。后面就只写数字
-        cntr.clabel(levels=cntr.levels[1:], 
+        _clabel = cntr.clabel(levels=cntr.levels[1:], 
                     fmt=lambda M: fmt(M * u.one), 
                     # fmt=lambda M: f'{M:.0e}',  # 只写数字
                     # fmt=lambda M: print(M),
@@ -121,21 +125,29 @@ class ParasSurveyPlot:
                     # manual=[[.2, 1], [.2, 1.5], [.2, 2], [.2, 2.4], [.2, 2.7],],  # 手动指定标签位置,
                     # manual=[]  # 手动指定标签位置,
                     )  #TODO: 怎么让它只显示 10^x，不要 k * 10^x ? cntr.cvalues
+        
+        if False:  # 给 clabel 加描边，增强可读性。但实际上效果并不好
+            import matplotlib.patheffects as path_effects
+            for _txt in _clabel:
+                _txt.set_path_effects([path_effects.withStroke(linewidth=.3, foreground='black')])
+                
+        self.contour_M_dust = cntr  # 存到属性中，方便外部访问
 
     def add_markers_for_paras_list(self, ax: Axes, paras_list: list[tuple[float, Quantity]], fig_ref: str,):
         typical_gammas, typical_n_0s = zip(*paras_list)
         typical_n_0s = Quantity(typical_n_0s)
         ax.scatter(typical_gammas, np.log10(typical_n_0s.value), 
-                        marker='*', facecolors='none', color="#ff9650", lw=1.5, s=10**2, 
+                        marker='*', color="#ff812d", edgecolor='k', linewidth=1, s=10**2 * 1.5, 
                         label=rf'$(\gamma, n_0)$ in {fig_ref}', zorder=100, 
-                        clip_on=False,
+                        clip_on=False, 
                         )
 
-        ax.legend(loc='best', framealpha=.8, bbox_to_anchor=(.99, .99))
+        ax.legend(loc='best', bbox_to_anchor=(.99, .99))
 
     def plot_figure(
         self,
         *,
+        ax: Axes | None = None,
         A_V_max_array: np.ndarray[float],
         crit_index_array: np.ndarray[int],
         constraint_array: np.ndarray[Constraint],
@@ -148,11 +160,14 @@ class ParasSurveyPlot:
         # NH_MAX_mask = ((constraint_array==Constraint.NH_MAX) | (X>1.5)) & (Y<1e4*u.cm**-3)
 
         self.set_style()
-
-        fig, ax = plt.subplots(
-            layout='constrained',
-            #   figsize=(6.4, 4.8)
-        )
+        
+        if ax is None:
+            fig, ax = plt.subplots(
+                figsize=[6, 4.8], 
+                layout='constrained',
+            )
+        else:
+            fig = ax.figure
 
         # 这里画图的先后顺序会影响图层顺序，后画的在上面
 
@@ -194,11 +209,13 @@ class ParasSurveyPlot:
     def plot_figure_from_dict(
         self,
         *,
+        ax: Axes | None = None,
         data_dict: dict,
         paras_list: list[tuple[float, Quantity]] | None = None,  # (gamma, n_0) 列表
         fig_ref: str | None = None,
     ):
         return self.plot_figure(
+            ax=ax,
             A_V_max_array=data_dict['A_V_max'],
             crit_index_array=data_dict['crit_index'],
             constraint_array=data_dict['constrained_by'],

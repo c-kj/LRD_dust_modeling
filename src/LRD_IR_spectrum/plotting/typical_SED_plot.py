@@ -46,7 +46,7 @@ def plot_observed_table(
     # marker 的默认属性，分别设置 detection 和 non-detection 的
     marker_props_default_dict: dict[detectionType, dict[str, Any]] = {
         True : dict(marker='o', color='r', edgecolor='k', lw=1, s=6**2,),
-        False: dict(marker='v', color='r', edgecolor='k', lw=1, s=6**2 * 1.3),
+        False: dict(marker='v', color='r', edgecolor='k', lw=.75, s=6**2 * 1.3),
     }
 
     scatter_handles: dict[detectionType, Artist] = {}  # 收集 scatter 的 handles
@@ -62,7 +62,7 @@ def plot_observed_table(
             x=x, y=y, data=table[mask],
             # s=6**2,
             **marker_props,
-            label={True: 'detection', False: 'non-detection'}[is_detected],
+            label={True: 'Detection', False: 'Non-detection'}[is_detected],
             zorder=5
         )
 
@@ -125,6 +125,12 @@ class TypicalSEDPlot:
 
         
     def set_style(self):
+        import scienceplots
+        plt.rcdefaults()
+        plt.style.use(['science',])
+        plt.rcParams['legend.frameon'] = True
+        plt.rcParams['lines.linewidth'] = 1.5
+        
         plt.rcParams['font.size'] = 14
         plt.rcParams['legend.fontsize'] = 'small'
         plt.rcParams['legend.title_fontsize'] = 'small'
@@ -173,7 +179,7 @@ class TypicalSEDPlot:
             model = self.model_factory(A_V=A_V_val, n_0=n_0, gamma=gamma)  # 固定 (n_0, gamma)
             color = cmap(norm(A_V_val))
             
-            ax.plot(model.incident_SED.wavelength, model.incident_SED.nu_L_nu.to(u.erg/u.s), color=color, **props_incident)  # de-redden 入射光谱
+            ax.plot(model.incident_SED.wavelength.to(u.um), model.incident_SED.nu_L_nu.to(u.erg/u.s), color=color, **props_incident)  # de-redden 入射光谱
             
             _line, = ax.loglog(model.opacity.wavelength, model.calc_nu_L_nu(), color=color, label=rf'{A_V_val:.1f} mag', **props_reprocessed)  # IR re-emission
             if A_V_val == A_V_high:  # 把 A_V_high 的线单独设定样式
@@ -187,8 +193,8 @@ class TypicalSEDPlot:
 
         # 绘制背景并获取图例句柄
         _line_observed_sed, _handle_detection, _handle_nondetection = self.plot_background(ax)
-        _handle_incident_sed = Line2D([], [], color='k', **props_incident, label='incident SED')
-        _handle_reprocessed_sed = Line2D([], [], color='k', **props_reprocessed, label='re-emitted SED') 
+        _handle_incident_sed = Line2D([], [], color='k', **props_incident, label='Incident SED')
+        _handle_reprocessed_sed = Line2D([], [], color='k', **props_reprocessed, label='Re-emitted SED') 
 
         handles_ax0_left = [
             _line_observed_sed, 
@@ -253,7 +259,7 @@ class TypicalSEDPlot:
         self.plot_background(ax) 
 
         # 图例
-        ax.legend(handles=handles_ax1_right, loc='upper left', bbox_to_anchor=(0.02, bbox_to_anchor_y), title=r"maximum allowed $A_V$", )
+        ax.legend(handles=handles_ax1_right, loc='upper left', bbox_to_anchor=(0.02, bbox_to_anchor_y), title=r"Maximum allowed $A_V$", )
         
         return ax
     
