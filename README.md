@@ -8,4 +8,10 @@ The method is developed based on our previous work: [Little Red Dots: Rapidly Gr
 
 The analysis performed in our paper can be found in the Jupyter Notebook `notebooks/A_V_constraint.ipynb`.
 
-If you are interested in trying the code, feel free to contact us through email (as shown in the paper).
+## Citation
+
+If you use this code in your research, please cite our paper [Dust Budget Crisis in Little Red Dots (K. Chen et al. 2025)](https://arxiv.org/abs/2505.22600).
+
+## Contact
+
+If you are interested in trying the code, feel free to contact us through the email provided in the paper. For bug reports, please open an issue in this repository.
