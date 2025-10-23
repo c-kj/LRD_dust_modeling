@@ -1,5 +1,7 @@
 # LRD_dust_modeling
 
+[![DOI](https://zenodo.org/badge/992476241.svg)](https://doi.org/10.5281/zenodo.17380459)
+
 Code for modeling dust re-emission and constraining dust extinction $A_V$ for Little Red Dots (LRDs).
 
 See our paper for the description of methods and results: [Dust Budget Crisis in Little Red Dots (K. Chen et al. 2025)](https://arxiv.org/abs/2505.22600).
