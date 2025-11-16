@@ -1,7 +1,6 @@
 name: LRD_dust_modeling
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - astropy
   - numpy

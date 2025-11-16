@@ -14,7 +14,7 @@ import numpy.typing as npt
 from matplotlib.contour import ContourSet
 
 PathArray: TypeAlias = npt.NDArray[np.floating]
-"""Alias for arrays representing an N×2 sequence of contour vertices."""
+"""Alias for arrays representing an N*2 sequence of contour vertices."""
 
 # ============= 步骤 1: 提取等值线路径 =============
 
@@ -185,7 +185,7 @@ def sample_multiple_paths_separately(
 
 # ============= 步骤 6: 高层组装函数 =============
 
-def sample_points_on_contour_v2(
+def sample_points_on_contour(
     contour_set: ContourSet,
     *,
     target_level: float,
@@ -218,3 +218,16 @@ def inspect_contour_paths(contour_set: ContourSet, target_level: float) -> dict[
     }
 
 
+
+__all__ = [
+    "PathArray",
+    "PathMergeStrategy",
+    "calc_all_path_lengths",
+    "calc_path_length",
+    "extract_contour_paths",
+    "inspect_contour_paths",
+    "merge_paths",
+    "sample_along_single_path",
+    "sample_multiple_paths_separately",
+    "sample_points_on_contour",
+]
