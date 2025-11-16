@@ -18,10 +18,10 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.lines import Line2D
 
 from ..A_V_limits import calc_A_V_max_for_paras
-from ..A_V_model import Partial_A_V_Model
+from ..A_V_model import A_V_Model, Partial_A_V_Model
 from ..incident_SED import SED, get_SED_detection
 from ..opacity import OpacityData
-from ..utils import quantity_to_latex
+from ..utils import quantity_to_latex, LogLogInterpolator
 from .plot_utils import add_wavelength_obs_xaxis, set_xylabel_with_unit
 
 np.seterr(over='ignore', divide='ignore')  # 忽略 overflow 和 divide by zero 的警告
@@ -122,6 +122,9 @@ class TypicalSEDPlot:
             model_factory=self.model_factory,
             constraint_SED=SED.from_QTable(SED_table),
         )
+
+        # 储存 panel B 中的模型对象，以备后续使用
+        self.panel_B_models: list[A_V_Model] = []
 
         
     def set_style(self):
@@ -237,7 +240,7 @@ class TypicalSEDPlot:
 
         handles_ax1_right = []
 
-        ax.set_title(rf"Maximizing $A_V$ for different $(\gamma, n_0)$") 
+        ax.set_title(r"Maximizing $A_V$ for different $(\gamma, n_0)$") 
 
         for gamma, n_0 in paras_list:
             A_V = self._calc_A_V_max(gamma=gamma, n_0=n_0).A_V_max
@@ -251,10 +254,12 @@ class TypicalSEDPlot:
             # IR re-emission + observed SED:
             if False: 
                 props_total = dict(alpha=.8, ls='--')
-                # axs[1].loglog(model.opacity.wavelength, model.calc_nu_L_nu_total(), color=color, **props_total)
+                # ax.loglog(model.opacity.wavelength, model.calc_nu_L_nu_total(), color=color, **props_total)
                 interp_nu_L_nu = LogLogInterpolator(model.observed_SED.wavelength, model.observed_SED.nu_L_nu, fill_value='extrapolate')  #TEMP 用 log-log 外插
-                axs[1].loglog(model.opacity.wavelength, model.calc_nu_L_nu() + interp_nu_L_nu(model.opacity.wavelength), color=color, **props_total)
-                axs[1].plot([], [], c='k', **props_total, label='observed + re-emission SED')  # 为了给 summation 的线条添加图例
+                ax.loglog(model.opacity.wavelength, model.calc_nu_L_nu() + interp_nu_L_nu(model.opacity.wavelength), color=color, **props_total)
+                ax.plot([], [], c='k', **props_total, label='observed + re-emission SED')  # 为了给 summation 的线条添加图例
+                
+            self.panel_B_models.append(model)  # 储存模型对象，以备后续使用
 
         self.plot_background(ax) 
 
