@@ -8,19 +8,18 @@
 
 ## 主要函数
 
-
-原函数被拆分为 6 个独立的小函数:
-
-1. **`extract_contour_paths`**: 提取等值线的所有路径顶点
-2. **`calc_path_length` / `calc_all_path_lengths`**: 计算路径长度
-3. **`merge_paths`**: 根据策略合并多条路径
-4. **`sample_along_single_path`**: 在单条路径上均匀采样
-5. **`sample_multiple_paths_separately`**: 对多条路径分别采样
-6. **`sample_points_on_contour_v2`**: 高层组装函数
+1. `extract_contour_lines`：提取目标 level 的所有 `LineString`
+2. `calc_line_length` / `calc_all_line_lengths`：基于 Shapely `length` 计算弧长
+3. `merge_lines`：结合 `LineMergeStrategy` 合并多条折线
+4. `sample_along_single_line`：在单条折线上按弧长插值
+5. `sample_multiple_lines_separately`：为每条折线单独采样后合并（可按长度占比）
+6. `sample_points_on_contour`：高层入口，串联“提取→合并→采样”
+7. `inspect_contour_lines`：输出数量、长度、顶点数，便于调试
+8. `intersect_line_with_polyline`：求 contour 线与任意折线的所有交点
 
 ## 路径处理策略
 
-支持 6 种路径处理策略（通过 `PathMergeStrategy` 枚举）:
+支持 6 种合并策略（通过 `LineMergeStrategy` 枚举）：
 
 | 策略 | 说明 | 适用场景 |
 |------|------|----------|
@@ -33,16 +32,16 @@
 
 ## 独立采样模式
 
-设置 `separate_sampling=True` 可对每条路径单独采样(不合并):
+设置 `separate_sampling=True` 可对每条折线单独采样（不合并）：
 
 - `by_length_proportion=True`: 按长度比例分配采样点数
 - `by_length_proportion=False`: 均匀分配采样点数
 
 ## 交点与调试
 
-- **交点**：`intersect_path_with_polyline(path_vertices, other_vertices)` 会把两者都转换为 `LineString` 并返回精确交点，若两条线存在重叠段则输出整段顶点。
+- **交点**：`intersect_line_with_polyline(line, other_vertices)` 会把外部顶点数组转成 `LineString` 并返回精确交点，若两条线存在重叠段则输出整段顶点。
 - **调试流程**：
-  1. 通过 `inspect_contour_paths` 检查各路径长度与分布；
+  1. 通过 `inspect_contour_lines` 检查折线数量、长度与分布；
   2. 决定是否使用合并策略或“独立采样 + 按长度占比”模式；
   3. 若 Shapely 返回 `GeometryCollection`，直接查看输出坐标即可判断交点/重叠区间位置。
 

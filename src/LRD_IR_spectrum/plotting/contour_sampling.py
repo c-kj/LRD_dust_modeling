@@ -1,5 +1,7 @@
 """基于 Shapely 的等值线采样与交点工具集。"""
 
+#TODO 重构：改用 shapely 之后，很多功能完全冗余了。这个模块目前只想做两件事：放置 clabel、在 contour line 上采样。
+
 from __future__ import annotations
 
 from enum import Enum
@@ -61,6 +63,12 @@ def _stack_vertices(lines: Sequence[LineString]) -> Array2D:
     return np.vstack(arrays)
 
 
+def _line_lengths(lines: Sequence[LineString]) -> list[float]:
+    """返回每条折线的长度数组。"""
+
+    return [line.length for line in lines]
+
+
 def _geometry_to_points(geometry) -> Array2D:
     """把 Shapely 交点对象统一展开为 (N,2) 数组。"""
 
@@ -94,7 +102,7 @@ def _geometry_to_points(geometry) -> Array2D:
 
 # ============= 步骤 1: 提取等值线路径 =============
 
-def extract_contour_paths(contour_set: ContourSet, target_level: float) -> list[LineString]:
+def extract_contour_lines(contour_set: ContourSet, target_level: float) -> list[LineString]:
     """从 `ContourSet` 中抽取目标等值线对应的所有折线。"""
 
     if not hasattr(contour_set, "levels") or not hasattr(contour_set, "allsegs"):
@@ -102,6 +110,8 @@ def extract_contour_paths(contour_set: ContourSet, target_level: float) -> list[
         raise AttributeError(msg)
 
     levels_list = list(contour_set.levels)
+    
+    #* 这里假定了 ContourSet 是 contour lines 而非 filled contour regions，所以 .levels 和 .allsegs 是等长的
     try:
         level_idx = levels_list.index(target_level)
     except ValueError as exc:  # pragma: no cover - defensive branch
@@ -127,24 +137,11 @@ def extract_contour_paths(contour_set: ContourSet, target_level: float) -> list[
     return lines
 
 
-# ============= 步骤 2: 计算路径长度 =============
-
-def calc_path_length(path: LineString) -> float:
-    """直接使用 Shapely 的 length 属性。"""
-
-    return float(path.length)
-
-
-def calc_all_path_lengths(paths: Sequence[LineString]) -> list[float]:
-    """批量返回多条折线的弧长。"""
-
-    return [calc_path_length(path) for path in paths]
-
-
 # ============= 步骤 3: 路径合并策略 =============
     
-class PathMergeStrategy(Enum):
-    """Strategies for combining multiple contour paths."""
+class LineMergeStrategy(Enum):
+    """Strategies for combining multiple contour lines."""
+
     LONGEST_ONLY = "longest"          # 只取最长路径
     DIRECT_CONCAT = "direct"          # 直接按顺序连接
     SORT_BY_START_X = "sort_x"        # 按起点 x 坐标排序后连接
@@ -153,41 +150,41 @@ class PathMergeStrategy(Enum):
     NEAREST_NEIGHBOR = "nearest"      # 最近邻连接（贪心）
 
 
-def merge_paths(paths: Sequence[LineString], strategy: PathMergeStrategy | str) -> LineString:
+def merge_lines(lines: Sequence[LineString], strategy: LineMergeStrategy | str) -> LineString:
     """根据策略返回一条新的合并折线。"""
 
     if isinstance(strategy, str):
-        strategy = PathMergeStrategy(strategy)
+        strategy = LineMergeStrategy(strategy)
 
-    if not paths:
+    if not lines:
         msg = "至少需要一条路径才能合并"
         raise ValueError(msg)
 
-    if len(paths) == 1:
-        return LineString(paths[0])
+    if len(lines) == 1:
+        return LineString(lines[0])
 
-    if strategy is PathMergeStrategy.LONGEST_ONLY:
-        lengths = calc_all_path_lengths(paths)
-        return LineString(paths[int(np.argmax(lengths))])
+    if strategy is LineMergeStrategy.LONGEST_ONLY:
+        lengths = _line_lengths(lines)
+        return LineString(lines[int(np.argmax(lengths))])
 
-    if strategy is PathMergeStrategy.DIRECT_CONCAT:
-        return LineString(_stack_vertices(paths))
+    if strategy is LineMergeStrategy.DIRECT_CONCAT:
+        return LineString(_stack_vertices(lines))
 
-    if strategy is PathMergeStrategy.SORT_BY_START_X:
-        ordered = sorted(paths, key=lambda line: _first_point(line)[0])
+    if strategy is LineMergeStrategy.SORT_BY_START_X:
+        ordered = sorted(lines, key=lambda line: _first_point(line)[0])
         return LineString(_stack_vertices(ordered))
 
-    if strategy is PathMergeStrategy.SORT_BY_START_Y:
-        ordered = sorted(paths, key=lambda line: _first_point(line)[1])
+    if strategy is LineMergeStrategy.SORT_BY_START_Y:
+        ordered = sorted(lines, key=lambda line: _first_point(line)[1])
         return LineString(_stack_vertices(ordered))
 
-    if strategy is PathMergeStrategy.SORT_BY_LENGTH:
-        lengths = calc_all_path_lengths(paths)
-        ordered = [path for _, path in sorted(zip(lengths, paths), reverse=True)]
+    if strategy is LineMergeStrategy.SORT_BY_LENGTH:
+        lengths = _line_lengths(lines)
+        ordered = [line for _, line in sorted(zip(lengths, lines), reverse=True)]
         return LineString(_stack_vertices(ordered))
 
-    if strategy is PathMergeStrategy.NEAREST_NEIGHBOR:
-        remaining = list(paths)
+    if strategy is LineMergeStrategy.NEAREST_NEIGHBOR:
+        remaining = list(lines)
         merged_order = [remaining.pop(0)]
         while remaining:
             tail = _last_point(merged_order[-1])
@@ -201,49 +198,49 @@ def merge_paths(paths: Sequence[LineString], strategy: PathMergeStrategy | str) 
 
 # ============= 步骤 4: 单条路径上的均匀采样 =============
 
-def sample_along_single_path(path: LineString, num_samples: int) -> Array2D:
+def sample_along_single_line(line: LineString, num_samples: int) -> Array2D:
     """利用 `LineString.interpolate` 等距采样。"""
 
     if num_samples <= 0:
         return np.empty((0, 2), dtype=float)
 
-    length = path.length
+    length = line.length
     if length == 0:
-        first = _line_to_array(path)[:1]
+        first = _line_to_array(line)[:1]
         return np.repeat(first, num_samples, axis=0)
 
     distances = np.linspace(0.0, length, num_samples)
-    samples = [path.interpolate(dist).coords[0] for dist in distances]
+    samples = [line.interpolate(dist).coords[0] for dist in distances]
     return np.asarray(samples, dtype=float)
 
 
 # ============= 步骤 5: 多路径独立采样策略 =============
 
-def sample_multiple_paths_separately(
-    paths: Sequence[LineString],
+def sample_multiple_lines_separately(
+    lines: Sequence[LineString],
     num_samples: int,
     *,
     by_length_proportion: bool = True,
 ) -> Array2D:
     """对每条路径独立采样，再拼接输出。"""
 
-    if not paths:
+    if not lines:
         return np.empty((0, 2), dtype=float)
 
     if by_length_proportion:
-        lengths = calc_all_path_lengths(paths)
+        lengths = _line_lengths(lines)
         total = sum(lengths)
         if total <= 0:
-            per_path = [max(1, num_samples // len(paths))] * len(paths)
+            per_line = [max(1, num_samples // len(lines))] * len(lines)
         else:
-            per_path = [max(1, int(num_samples * length / total)) for length in lengths]
+            per_line = [max(1, int(num_samples * length / total)) for length in lengths]
     else:
-        base = max(1, num_samples // len(paths))
-        per_path = [base] * len(paths)
+        base = max(1, num_samples // len(lines))
+        per_line = [base] * len(lines)
 
     samples = [
-        sample_along_single_path(path, count)
-        for path, count in zip(paths, per_path, strict=False)
+        sample_along_single_line(line, count)
+        for line, count in zip(lines, per_line, strict=False)
         if count > 0
     ]
     return np.vstack(samples) if samples else np.empty((0, 2), dtype=float)
@@ -256,30 +253,30 @@ def sample_points_on_contour(
     *,
     target_level: float,
     num_samples: int,
-    merge_strategy: PathMergeStrategy | str,
+    merge_strategy: LineMergeStrategy | str,
     separate_sampling: bool = False,
     by_length_proportion: bool = True,
 ) -> Array2D:
     """高层封装：返回指定等值线上的采样点坐标数组。"""
 
-    paths = extract_contour_paths(contour_set, target_level)
+    lines = extract_contour_lines(contour_set, target_level)
 
     if separate_sampling:
-        return sample_multiple_paths_separately(paths, num_samples, by_length_proportion=by_length_proportion)
+        return sample_multiple_lines_separately(lines, num_samples, by_length_proportion=by_length_proportion)
 
-    merged = merge_paths(paths, strategy=merge_strategy)
-    return sample_along_single_path(merged, num_samples)
+    merged = merge_lines(lines, strategy=merge_strategy)
+    return sample_along_single_line(merged, num_samples)
 
 
-def inspect_contour_paths(contour_set: ContourSet, target_level: float) -> dict[str, object]:
+def inspect_contour_lines(contour_set: ContourSet, target_level: float) -> dict[str, object]:
     """输出等值线的数量、长度和顶点数信息，便于调试布局策略。"""
 
-    paths = extract_contour_paths(contour_set, target_level)
-    lengths = calc_all_path_lengths(paths)
+    lines = extract_contour_lines(contour_set, target_level)
+    lengths = _line_lengths(lines)
     return {
-        "num_paths": len(paths),
-        "path_lengths": lengths,
-        "num_vertices": [len(line.coords) for line in paths],
+        "num_lines": len(lines),
+        "line_lengths": lengths,
+        "num_vertices": [len(line.coords) for line in lines],
         "total_length": float(sum(lengths)),
         "longest_idx": int(np.argmax(lengths)),
         "shortest_idx": int(np.argmin(lengths)),
@@ -288,24 +285,22 @@ def inspect_contour_paths(contour_set: ContourSet, target_level: float) -> dict[
 
 # ============= 交点：全程依赖 Shapely =============
 
-def intersect_path_with_polyline(path: LineString, curve_vertices: Array2D) -> Array2D:
-    """求 path 与另一条折线的所有交点（Point/Line 均兼容）。"""
+def intersect_line_with_polyline(line: LineString, curve_vertices: Array2D) -> Array2D:
+    """求 line 与另一条折线的所有交点（Point/Line 均兼容）。"""
 
     other = _ensure_linestring(curve_vertices)
-    intersection = path.intersection(other)
+    intersection = line.intersection(other)
     return _geometry_to_points(intersection)
 
 
 __all__ = [
     "Array2D",
-    "PathMergeStrategy",
-    "calc_all_path_lengths",
-    "calc_path_length",
-    "extract_contour_paths",
-    "inspect_contour_paths",
-    "intersect_path_with_polyline",
-    "merge_paths",
-    "sample_along_single_path",
-    "sample_multiple_paths_separately",
+    "LineMergeStrategy",
+    "extract_contour_lines",
+    "inspect_contour_lines",
+    "intersect_line_with_polyline",
+    "merge_lines",
+    "sample_along_single_line",
+    "sample_multiple_lines_separately",
     "sample_points_on_contour",
 ]
