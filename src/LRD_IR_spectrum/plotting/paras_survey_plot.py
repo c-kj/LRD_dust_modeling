@@ -10,10 +10,12 @@ from astropy.units import Quantity
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import Figure, Axes
 from matplotlib.colors import LogNorm
+from shapely import LineString
 
 
 from ..A_V_limits import Constraint
 from ..utils import quantity_to_latex
+from .contour_sampling import get_contour_line_intersections
 
 
 class ParasSurveyPlot: 
@@ -22,10 +24,12 @@ class ParasSurveyPlot:
         *,
         gamma_array: np.ndarray,
         n_0_array: Quantity,
-        
+        clabel_pos_line: LineString | None = None,
     ):
         self.gamma_array = gamma_array
         self.n_0_array = n_0_array
+        # 一些次要的选项，作为属性，避免在函数之间传递很多层
+        self.clabel_pos_line = clabel_pos_line
 
     def set_style(self):
         import scienceplots
@@ -65,13 +69,10 @@ class ParasSurveyPlot:
         # ax.contour(gamma_array, np.log10(n_0_array.value), critical_wavelength_array.to_value(u.um), colors='k', levels=[1, 3, 5, 100])
         all_crit_indices = np.unique(crit_index_array)
         ax.contour(gamma_array, np.log10(n_0_array.value),
-                #   np.reshape(crit_index_list, X.shape), 
                 np.ma.array(crit_index_array, mask=NH_MAX_mask),
                 levels=(all_crit_indices[1:] + all_crit_indices[:-1]) / 2,
                 colors='k', linewidths=1.3,
                 )
-
-        return
 
     def plot_region_NH_MAX(self, ax: Axes, constraint_array: np.ndarray, ):
         gamma_array = self.gamma_array
@@ -99,7 +100,7 @@ class ParasSurveyPlot:
 
         return
 
-    def plot_M_dust_contour(self, *, ax: Axes, M_dust_array: Quantity, NH_MAX_mask: np.ndarray[bool],):
+    def plot_M_dust_contour(self, *, ax: Axes, M_dust_array: Quantity, NH_MAX_mask: np.ndarray[bool]):
         gamma_array = self.gamma_array
         n_0_array = self.n_0_array
 
@@ -116,15 +117,28 @@ class ParasSurveyPlot:
                 )
         fmt = partial(quantity_to_latex, formatter='e')  # 用于格式化 Quantity  # 取 e 是
         _clabel_props = dict(use_clabeltext=True, fontsize=10,)
-        cntr.clabel(levels=cntr.levels[:1], fmt=lambda M: rf'$M_{{\rm dust}}$ = {fmt(M * u.Msun)}', **_clabel_props)  # 把第一条线单独拎出来，写全变量和单位。后面就只写数字
-        _clabel = cntr.clabel(levels=cntr.levels[1:], 
-                    fmt=lambda M: fmt(M * u.one), 
-                    # fmt=lambda M: f'{M:.0e}',  # 只写数字
-                    # fmt=lambda M: print(M),
-                    **_clabel_props, 
-                    # manual=[[.2, 1], [.2, 1.5], [.2, 2], [.2, 2.4], [.2, 2.7],],  # 手动指定标签位置,
-                    # manual=[]  # 手动指定标签位置,
-                    )  #TODO: 怎么让它只显示 10^x，不要 k * 10^x ? cntr.cvalues
+        
+        def _fmt(M):  # 这个函数依赖外部变量 cntr.levels 和 fmt
+            # 根据 M 的取值来决定不同的 fmt
+            if M == cntr.levels[0]:   # 只对第一个 level，显示完整的文本
+                return rf'$M_{{\rm dust}}$ = {fmt(M * u.Msun)}'
+            else:  # 后续 level 只显示数字
+                return fmt(M * u.one)
+
+        if self.clabel_pos_line is None:  # 默认情况不指定 clabel_pos_line，则自动放置 clabel
+            manual = False
+        else:
+            intersection_points = get_contour_line_intersections(
+                contour_set=cntr, clabel_pos_line=self.clabel_pos_line
+            )
+            manual = intersection_points.values()  # 手动指定标签位置
+
+        _clabel = cntr.clabel(
+            levels=cntr.levels,
+            fmt=_fmt,
+            **_clabel_props,
+            manual=manual,
+        )
         
         if False:  # 给 clabel 加描边，增强可读性。但实际上效果并不好
             import matplotlib.patheffects as path_effects
@@ -197,14 +211,6 @@ class ParasSurveyPlot:
         # * 需要根据不同的图在外部进行的操作：set_title, savefig, 加上 text
 
         return fig, ax
-
-        # fig.savefig(f'figures/paras_survey/{_opacity_name}_Tfloor=30_large_6.png', bbox_inches='tight')
-        # fig.savefig(f'figures/paras_survey/{_opacity_name}_Tfloor=30_large_6.pdf', bbox_inches='tight')
-
-        # fig.savefig(f'figures/paras_survey/ignore_UV/{_opacity_name}_Tfloor=30_ignore_UV_6.pdf', bbox_inches='tight')
-        # fig.savefig(f'figures/paras_survey/ignore_UV/{_opacity_name}_Tfloor=30_ignore_UV_6.png', bbox_inches='tight')
-
-        # fig.savefig(f'figures/paras_survey/Delvecchio_{_opacity_name}_Tfloor=30_1.pdf', bbox_inches='tight')
 
     def plot_figure_from_dict(
         self,

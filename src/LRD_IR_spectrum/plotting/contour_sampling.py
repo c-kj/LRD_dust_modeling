@@ -292,6 +292,26 @@ def intersect_line_with_polyline(line: LineString, curve_vertices: Array2D) -> A
     intersection = line.intersection(other)
     return _geometry_to_points(intersection)
 
+#TODO 写注释、简化、取代 intersect_line_with_polyline 函数、更新文档
+def get_contour_line_intersections(
+    contour_set: ContourSet,
+    clabel_pos_line: LineString,
+):
+
+    intersection_points: dict[float, tuple[float, float]] = {}
+    for level in contour_set.levels:
+        try:
+            contour_line_segments = extract_contour_lines(contour_set, level)
+        except ValueError as e:  # contour line 为空
+            continue
+        contour_multiline = MultiLineString(contour_line_segments)
+    
+        point = contour_multiline.intersection(clabel_pos_line)
+        assert not point.is_empty, "No intersection found"
+        assert type(point) is Point, f"Expected Point, got {type(point)}"
+        intersection_points[level] = point.coords[0]
+    
+    return intersection_points
 
 __all__ = [
     "Array2D",
@@ -303,4 +323,5 @@ __all__ = [
     "sample_along_single_line",
     "sample_multiple_lines_separately",
     "sample_points_on_contour",
+    "get_contour_line_intersections",
 ]
