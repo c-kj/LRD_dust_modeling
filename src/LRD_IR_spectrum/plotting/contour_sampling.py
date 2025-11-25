@@ -1,7 +1,5 @@
 """基于 Shapely 的等值线采样与交点工具集。"""
 
-#TODO 重构：改用 shapely 之后，很多功能完全冗余了。这个模块目前只想做两件事：放置 clabel、在 contour line 上采样。
-
 from __future__ import annotations
 
 from enum import Enum
@@ -10,126 +8,38 @@ from typing import Sequence
 import numpy as np
 import numpy.typing as npt
 from matplotlib.contour import ContourSet
-from shapely.geometry import (
-    GeometryCollection,
-    LineString,
-    MultiLineString,
-    MultiPoint,
-    Point,
-)
+from shapely.geometry import LineString, MultiLineString, MultiPoint, Point
 
 Array2D = npt.NDArray[np.float64]
 
 
-# ============= 通用工具 =============
-
-def _ensure_linestring(vertices: Array2D) -> LineString:
-    """将 (N,2) 顶点数组转为 LineString，并在入口处做完整校验。"""
-
-    arr = np.asarray(vertices, dtype=float)
-    if arr.ndim != 2 or arr.shape[1] != 2:
-        msg = "曲线顶点必须是 (N, 2) 结构"
-        raise ValueError(msg)
-    if arr.shape[0] < 2:
-        msg = "曲线至少需要 2 个顶点"
-        raise ValueError(msg)
-    return LineString(arr)
-
-
-def _line_to_array(line: LineString) -> Array2D:
-    """将 LineString 转回 numpy 数组，方便排序或拼接。"""
-
-    return np.asarray(line.coords, dtype=float)
-
-
-def _first_point(line: LineString) -> Array2D:
-    """取首个顶点坐标。"""
-
-    return np.array(line.coords[0], dtype=float)
-
-
-def _last_point(line: LineString) -> Array2D:
-    """取最后一个顶点坐标。"""
-
-    return np.array(line.coords[-1], dtype=float)
-
-
-def _stack_vertices(lines: Sequence[LineString]) -> Array2D:
-    """按顺序堆叠多条线的顶点。"""
-
-    if not lines:
-        return np.empty((0, 2), dtype=float)
-    arrays = [_line_to_array(line) for line in lines]
-    return np.vstack(arrays)
-
-
-def _line_lengths(lines: Sequence[LineString]) -> list[float]:
-    """返回每条折线的长度数组。"""
-
-    return [line.length for line in lines]
-
-
-def _geometry_to_points(geometry) -> Array2D:
-    """把 Shapely 交点对象统一展开为 (N,2) 数组。"""
-
-    if geometry.is_empty:
-        return np.empty((0, 2), dtype=float)
-
-    if isinstance(geometry, Point):
-        return np.array([[geometry.x, geometry.y]], dtype=float)
-
-    if isinstance(geometry, MultiPoint):
-        return np.array([[pt.x, pt.y] for pt in geometry.geoms], dtype=float)
-
-    if isinstance(geometry, LineString):
-        return _line_to_array(geometry)
-
-    if isinstance(geometry, MultiLineString):
-        segments = [_line_to_array(line) for line in geometry.geoms]
-        return np.vstack(segments)
-
-    if isinstance(geometry, GeometryCollection):
-        pieces: list[Array2D] = []
-        for geom in geometry.geoms:
-            piece = _geometry_to_points(geom)
-            if piece.size:
-                pieces.append(piece)
-        return np.vstack(pieces) if pieces else np.empty((0, 2), dtype=float)
-
-    msg = f"暂不支持的交点类型: {geometry.geom_type}"
-    raise TypeError(msg)
-
-
-# ============= 步骤 1: 提取等值线路径 =============
+# ============= 核心功能 =============
 
 def extract_contour_lines(contour_set: ContourSet, target_level: float) -> list[LineString]:
     """从 `ContourSet` 中抽取目标等值线对应的所有折线。"""
 
-    if not hasattr(contour_set, "levels") or not hasattr(contour_set, "allsegs"):
-        msg = "ContourSet 需要同时包含 'levels' 与 'allsegs' 属性"
-        raise AttributeError(msg)
+    if getattr(contour_set, "filled", False):
+        msg = "ContourSet 来自 contourf(); 仅支持 contour() 生成的线 contours"
+        raise ValueError(msg)
 
     levels_list = list(contour_set.levels)
     
-    #* 这里假定了 ContourSet 是 contour lines 而非 filled contour regions，所以 .levels 和 .allsegs 是等长的
     try:
         level_idx = levels_list.index(target_level)
-    except ValueError as exc:  # pragma: no cover - defensive branch
-        msg = f"Level {target_level} is not present; available levels: {levels_list}"
+    except ValueError as exc:
+        msg = f"Level {target_level} 不存在; 可用 levels: {levels_list}"
         raise ValueError(msg) from exc
 
-    try:
-        segments = contour_set.allsegs[level_idx]
-    except IndexError as exc:  # pragma: no cover - defensive branch
-        msg = f"Index {level_idx} is out of bounds for allsegs"
-        raise IndexError(msg) from exc
+    # 这里假定了 ContourSet 是 contour lines 而非 filled contour regions，所以 .levels 和 .allsegs 是等长的，应该不会越界
+    segments = contour_set.allsegs[level_idx]
 
     lines = [
-        LineString(np.asarray(seg, dtype=float))
+        LineString(seg)
         for seg in segments
-        if isinstance(seg, np.ndarray) and seg.ndim == 2 and seg.shape[0] >= 2
+        if seg.ndim == 2 and seg.shape[0] >= 2
     ]
 
+    # 对于某个 level 上没有路径的情况，lines 是空的
     if not lines:
         msg = f"等值线 {target_level} 没有合法路径 (至少 2 个顶点)"
         raise ValueError(msg)
@@ -137,21 +47,27 @@ def extract_contour_lines(contour_set: ContourSet, target_level: float) -> list[
     return lines
 
 
-# ============= 步骤 3: 路径合并策略 =============
-    
 class LineMergeStrategy(Enum):
-    """Strategies for combining multiple contour lines."""
+    """多条等值线路径的合并策略。"""
 
     LONGEST_ONLY = "longest"          # 只取最长路径
     DIRECT_CONCAT = "direct"          # 直接按顺序连接
-    SORT_BY_START_X = "sort_x"        # 按起点 x 坐标排序后连接
-    SORT_BY_START_Y = "sort_y"        # 按起点 y 坐标排序后连接
-    SORT_BY_LENGTH = "sort_length"    # 按长度降序排列后连接
     NEAREST_NEIGHBOR = "nearest"      # 最近邻连接（贪心）
 
 
-def merge_lines(lines: Sequence[LineString], strategy: LineMergeStrategy | str) -> LineString:
-    """根据策略返回一条新的合并折线。"""
+def merge_lines(
+    lines: Sequence[LineString],
+    strategy: LineMergeStrategy | str,
+    *,
+    allow_reverse: bool = True,
+) -> LineString:
+    """根据策略将多条 LineString 合并为一条 LineString。
+
+    Args:
+        lines: 待合并的折线序列。
+        strategy: 合并策略枚举或其字符串值。
+        allow_reverse: 在最近邻策略中，是否允许为减少跳跃而反转候选折线。
+    """
 
     if isinstance(strategy, str):
         strategy = LineMergeStrategy(strategy)
@@ -161,167 +77,143 @@ def merge_lines(lines: Sequence[LineString], strategy: LineMergeStrategy | str) 
         raise ValueError(msg)
 
     if len(lines) == 1:
-        return LineString(lines[0])
+        return lines[0]
 
     if strategy is LineMergeStrategy.LONGEST_ONLY:
-        lengths = _line_lengths(lines)
-        return LineString(lines[int(np.argmax(lengths))])
+        return max(lines, key=lambda line: line.length)
 
     if strategy is LineMergeStrategy.DIRECT_CONCAT:
-        return LineString(_stack_vertices(lines))
+        # 直接拼接坐标数组
+        coords = np.vstack([np.array(line.coords) for line in lines])
+        return LineString(coords)
 
-    if strategy is LineMergeStrategy.SORT_BY_START_X:
-        ordered = sorted(lines, key=lambda line: _first_point(line)[0])
-        return LineString(_stack_vertices(ordered))
-
-    if strategy is LineMergeStrategy.SORT_BY_START_Y:
-        ordered = sorted(lines, key=lambda line: _first_point(line)[1])
-        return LineString(_stack_vertices(ordered))
-
-    if strategy is LineMergeStrategy.SORT_BY_LENGTH:
-        lengths = _line_lengths(lines)
-        ordered = [line for _, line in sorted(zip(lengths, lines), reverse=True)]
-        return LineString(_stack_vertices(ordered))
-
+    #BUG 这里的算法好像有问题，不如预期，有待检查
     if strategy is LineMergeStrategy.NEAREST_NEIGHBOR:
-        remaining = list(lines)
-        merged_order = [remaining.pop(0)]
+        # 贪心策略：从最长的路径开始，每次拼接最近的下一条
+        remaining = sorted(list(lines), key=lambda line: line.length, reverse=True)
+        merged_coords = list(remaining.pop(0).coords)
+
         while remaining:
-            tail = _last_point(merged_order[-1])
-            distances = [np.linalg.norm(_first_point(line) - tail) for line in remaining]
-            merged_order.append(remaining.pop(int(np.argmin(distances))))
-        return LineString(_stack_vertices(merged_order))
+            tail_point = Point(merged_coords[-1])
+            best_idx = -1
+            min_dist = float("inf")
+            best_should_reverse = False
+
+            for idx, candidate in enumerate(remaining):
+                head_point = Point(candidate.coords[0])
+                tail_candidate_point = Point(candidate.coords[-1])
+
+                head_dist = tail_point.distance(head_point)
+                candidate_dist = head_dist
+                should_reverse = False
+
+                if allow_reverse:
+                    tail_dist = tail_point.distance(tail_candidate_point)
+                    if tail_dist < candidate_dist:
+                        candidate_dist = tail_dist
+                        should_reverse = True
+
+                if candidate_dist < min_dist:
+                    min_dist = candidate_dist
+                    best_idx = idx
+                    best_should_reverse = should_reverse
+
+            next_line = remaining.pop(best_idx)
+            coords = list(next_line.coords)
+            if allow_reverse and best_should_reverse:
+                coords = list(reversed(coords))
+            merged_coords.extend(coords)
+
+        return LineString(merged_coords)
 
     msg = f"未知的合并策略: {strategy}"
     raise ValueError(msg)
 
 
-# ============= 步骤 4: 单条路径上的均匀采样 =============
-
+#TODO: 支持 LineString | MultiLineString 作为输入。增加相应测试。考虑改名。
 def sample_along_single_line(line: LineString, num_samples: int) -> Array2D:
-    """利用 `LineString.interpolate` 等距采样。"""
+    """在 LineString 上进行等距采样。"""
+    fractions = np.linspace(0.0, 1.0, num_samples)
+    samples = line.interpolate(fractions, normalized=True)
+    return np.array([[point.x, point.y] for point in samples])
 
-    if num_samples <= 0:
-        return np.empty((0, 2), dtype=float)
-
-    length = line.length
-    if length == 0:
-        first = _line_to_array(line)[:1]
-        return np.repeat(first, num_samples, axis=0)
-
-    distances = np.linspace(0.0, length, num_samples)
-    samples = [line.interpolate(dist).coords[0] for dist in distances]
-    return np.asarray(samples, dtype=float)
-
-
-# ============= 步骤 5: 多路径独立采样策略 =============
-
-def sample_multiple_lines_separately(
-    lines: Sequence[LineString],
-    num_samples: int,
-    *,
-    by_length_proportion: bool = True,
-) -> Array2D:
-    """对每条路径独立采样，再拼接输出。"""
-
-    if not lines:
-        return np.empty((0, 2), dtype=float)
-
-    if by_length_proportion:
-        lengths = _line_lengths(lines)
-        total = sum(lengths)
-        if total <= 0:
-            per_line = [max(1, num_samples // len(lines))] * len(lines)
-        else:
-            per_line = [max(1, int(num_samples * length / total)) for length in lengths]
-    else:
-        base = max(1, num_samples // len(lines))
-        per_line = [base] * len(lines)
-
-    samples = [
-        sample_along_single_line(line, count)
-        for line, count in zip(lines, per_line, strict=False)
-        if count > 0
-    ]
-    return np.vstack(samples) if samples else np.empty((0, 2), dtype=float)
-
-
-# ============= 步骤 6: 高层组装函数 =============
 
 def sample_points_on_contour(
     contour_set: ContourSet,
     *,
     target_level: float,
     num_samples: int,
-    merge_strategy: LineMergeStrategy | str,
-    separate_sampling: bool = False,
-    by_length_proportion: bool = True,
+    merge_strategy: LineMergeStrategy | str = LineMergeStrategy.LONGEST_ONLY,
+    allow_reverse: bool = True,
 ) -> Array2D:
-    """高层封装：返回指定等值线上的采样点坐标数组。"""
+    """
+    高层封装：返回指定等值线上的采样点坐标数组。
+    
+    1. 提取指定 level 的所有 segments
+    2. 按策略合并为一条 LineString（可选是否允许反向连接）
+    3. 等距采样
+    """
 
     lines = extract_contour_lines(contour_set, target_level)
-
-    if separate_sampling:
-        return sample_multiple_lines_separately(lines, num_samples, by_length_proportion=by_length_proportion)
-
-    merged = merge_lines(lines, strategy=merge_strategy)
+    merged = merge_lines(lines, strategy=merge_strategy, allow_reverse=allow_reverse)
     return sample_along_single_line(merged, num_samples)
 
 
-def inspect_contour_lines(contour_set: ContourSet, target_level: float) -> dict[str, object]:
-    """输出等值线的数量、长度和顶点数信息，便于调试布局策略。"""
-
-    lines = extract_contour_lines(contour_set, target_level)
-    lengths = _line_lengths(lines)
-    return {
-        "num_lines": len(lines),
-        "line_lengths": lengths,
-        "num_vertices": [len(line.coords) for line in lines],
-        "total_length": float(sum(lengths)),
-        "longest_idx": int(np.argmax(lengths)),
-        "shortest_idx": int(np.argmin(lengths)),
-    }
-
-
-# ============= 交点：全程依赖 Shapely =============
-
-def intersect_line_with_polyline(line: LineString, curve_vertices: Array2D) -> Array2D:
-    """求 line 与另一条折线的所有交点（Point/Line 均兼容）。"""
-
-    other = _ensure_linestring(curve_vertices)
-    intersection = line.intersection(other)
-    return _geometry_to_points(intersection)
-
-#TODO 写注释、简化、取代 intersect_line_with_polyline 函数、更新文档
 def get_contour_line_intersections(
     contour_set: ContourSet,
-    clabel_pos_line: LineString,
-):
+    guide_line: LineString,
+) -> dict[float, tuple[float, float]]:
+    """
+    计算 ContourSet 中所有 levels 与 guide_line 的交点。
+    用于确定 clabel 的放置位置。
+    
+    Args:
+        contour_set: matplotlib ContourSet 对象
+        guide_line: 用于定位的引导线 (Shapely LineString)
+        
+    Returns:
+        dict: {level_value: (x, y)}
+    """
 
     intersection_points: dict[float, tuple[float, float]] = {}
+    
     for level in contour_set.levels:
         try:
-            contour_line_segments = extract_contour_lines(contour_set, level)
-        except ValueError as e:  # contour line 为空
+            lines = extract_contour_lines(contour_set, level)
+        except ValueError:
+            # 该 level 可能没有路径
             continue
-        contour_multiline = MultiLineString(contour_line_segments)
-    
-        point = contour_multiline.intersection(clabel_pos_line)
-        assert not point.is_empty, "No intersection found"
-        assert type(point) is Point, f"Expected Point, got {type(point)}"
-        intersection_points[level] = point.coords[0]
-    
+            
+        # 使用 MultiLineString 表示该 level 的所有等值线
+        contour_multiline = MultiLineString(lines)
+        
+        intersection = contour_multiline.intersection(guide_line)
+        
+        if intersection.is_empty:
+            continue
+
+        if isinstance(intersection, Point):
+            points = [intersection]
+        elif isinstance(intersection, MultiPoint):
+            points = list(intersection.geoms)
+        else:
+            msg = f"交点类型 {intersection.geom_type} 不受支持，仅允许 Point 或 MultiPoint"
+            raise TypeError(msg)
+
+        if not points:
+            continue
+
+        pt = points[0]
+        intersection_points[level] = (pt.x, pt.y)
+            
     return intersection_points
 
+
 __all__ = [
-    "Array2D",
-    "LineMergeStrategy",
     "extract_contour_lines",
-    "inspect_contour_lines",
-    "intersect_line_with_polyline",
     "merge_lines",
     "sample_along_single_line",
-    "sample_multiple_lines_separately",
     "sample_points_on_contour",
     "get_contour_line_intersections",
+    "LineMergeStrategy",
 ]

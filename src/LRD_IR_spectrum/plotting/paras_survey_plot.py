@@ -129,7 +129,7 @@ class ParasSurveyPlot:
             manual = False
         else:
             intersection_points = get_contour_line_intersections(
-                contour_set=cntr, clabel_pos_line=self.clabel_pos_line
+                contour_set=cntr, guide_line=self.clabel_pos_line
             )
             manual = intersection_points.values()  # 手动指定标签位置
 
