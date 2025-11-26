@@ -13,3 +13,5 @@ dependencies:
   - ipympl
   - scienceplots
   - shapely
+  
+  - pytest  # 测试需要的包

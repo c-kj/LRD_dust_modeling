@@ -52,7 +52,7 @@ def test_get_contour_at_level(mock_contour_set):
     contour = get_contour_at_level(mock_contour_set, 10.0)
     assert isinstance(contour, MultiLineString)
     assert len(contour.geoms) == 2
-    assert contour.geoms[0].coords[:] == [(0, 0), (1, 1), (2, 2)]
+    assert contour.geoms[0] == LineString([(0, 0), (1, 1), (2, 2)])
 
     # Test level not found
     with pytest.raises(ValueError, match="Level 99.0 不存在"):
@@ -67,15 +67,13 @@ def test_get_contour_at_level_rejects_filled(mock_contour_set):
     with pytest.raises(ValueError, match=r"ContourSet 来自 contourf\(\)"):
         get_contour_at_level(mock_contour_set, 10.0)
 
-# 使用 .coords[:] 而非 == 进行比较，因为我们需要精确的坐标顺序匹配，
-# 而 Shapely 的 == (equals) 只检查几何等价性。
 def test_merge_lines_longest():
     l1 = LineString([(0, 0), (1, 0)]) # Length 1
     l2 = LineString([(0, 0), (0, 10)]) # Length 10
     
     merged = merge_lines([l1, l2], LineMergeStrategy.LONGEST_ONLY)
     assert merged.length == 10.0
-    assert merged.coords[:] == [(0, 0), (0, 10)]
+    assert merged == LineString([(0, 0), (0, 10)])
 
 def test_merge_lines_accepts_multilinestring():
     """merge_lines 应该同时支持 MultiLineString 和 Sequence[LineString]。"""
@@ -85,7 +83,7 @@ def test_merge_lines_accepts_multilinestring():
     ])
     merged = merge_lines(mls, LineMergeStrategy.LONGEST_ONLY)
     assert merged.length == 10.0
-    assert merged.coords[:] == [(0, 0), (0, 10)]
+    assert merged == LineString([(0, 0), (0, 10)])
 
 def test_merge_lines_direct():
     l1 = LineString([(0, 0), (1, 1)])
@@ -93,8 +91,7 @@ def test_merge_lines_direct():
     
     merged = merge_lines([l1, l2], LineMergeStrategy.DIRECT_CONCAT)
     # Should be (0,0)->(1,1)->(2,2)->(3,3)
-    expected = [(0, 0), (1, 1), (2, 2), (3, 3)]
-    assert merged.coords[:] == expected
+    assert merged == LineString([(0, 0), (1, 1), (2, 2), (3, 3)])
 
 def test_merge_lines_nearest():
     # l1: (0,0) -> (1,0)
@@ -107,8 +104,7 @@ def test_merge_lines_nearest():
     
     merged = merge_lines([l1, l3, l2], LineMergeStrategy.NEAREST_NEIGHBOR)
     # Expected order: l1 -> l2 -> l3
-    expected = [(0, 0), (1, 0), (2, 0), (3, 0), (10, 0), (11, 0)]
-    assert merged.coords[:] == expected
+    assert merged == LineString([(0, 0), (1, 0), (2, 0), (3, 0), (10, 0), (11, 0)])
 
 def test_merge_lines_nearest_allow_reverse_toggle():
     l1 = LineString([(0, 0), (1, 0)])
@@ -119,14 +115,14 @@ def test_merge_lines_nearest_allow_reverse_toggle():
         LineMergeStrategy.NEAREST_NEIGHBOR,
         allow_reverse=True,
     )
-    assert merged_allow.coords[:] == [(0, 0), (1, 0), (1, 0), (2, 0)]
+    assert merged_allow == LineString([(0, 0), (1, 0), (1, 0), (2, 0)])
 
     merged_disallow = merge_lines(
         [l1, l2],
         LineMergeStrategy.NEAREST_NEIGHBOR,
         allow_reverse=False,
     )
-    assert merged_disallow.coords[:] == [(0, 0), (1, 0), (2, 0), (1, 0)]
+    assert merged_disallow == LineString([(0, 0), (1, 0), (2, 0), (1, 0)])
 
 def test_sample_along_line():
     line = LineString([(0, 0), (10, 0)])
