@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 
 import numpy as np
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -32,17 +32,16 @@ class ContourSamplingTests(unittest.TestCase):
 
         sampled = sample_along_single_path(path, 4)
         self.assertEqual(sampled.shape, (4, 2))
-        np.testing.assert_allclose(sampled[0], path.coords[0])
-        np.testing.assert_allclose(sampled[-1], path.coords[-1])
+        self.assertTrue(Point(sampled[0]).equals_exact(Point(path.coords[0]), 1e-9))
+        self.assertTrue(Point(sampled[-1]).equals_exact(Point(path.coords[-1]), 1e-9))
 
     def test_merge_paths_nearest_neighbor(self) -> None:
         path_a = LineString([[0.0, 0.0], [1.0, 0.0]])
         path_b = LineString([[1.0, 0.0], [1.0, 1.0]])
         merged = merge_paths([path_a, path_b], PathMergeStrategy.NEAREST_NEIGHBOR)
-        merged_array = np.asarray(merged.coords, dtype=float)
-        self.assertEqual(merged_array.shape, (4, 2))
-        np.testing.assert_allclose(merged_array[0], path_a.coords[0])
-        np.testing.assert_allclose(merged_array[-1], path_b.coords[-1])
+        self.assertEqual(len(merged.coords), 4)
+        self.assertTrue(Point(merged.coords[0]).equals_exact(Point(path_a.coords[0]), 1e-9))
+        self.assertTrue(Point(merged.coords[-1]).equals_exact(Point(path_b.coords[-1]), 1e-9))
 
     def test_intersect_path_with_polyline(self) -> None:
         diagonal = LineString([[0.0, 0.0], [1.0, 1.0]])
@@ -50,7 +49,7 @@ class ContourSamplingTests(unittest.TestCase):
         points = intersect_path_with_polyline(diagonal, vertical)
         self.assertEqual(points.shape[1], 2)
         self.assertGreaterEqual(points.shape[0], 1)
-        np.testing.assert_allclose(points[0], np.array([0.5, 0.5]), atol=1e-8)
+        self.assertTrue(Point(points[0]).equals_exact(Point(0.5, 0.5), 1e-8))
 
     def test_separate_sampling_distribution(self) -> None:
         short = LineString([[0.0, 0.0], [1.0, 0.0]])
