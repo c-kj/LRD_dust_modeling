@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import pytest
-from shapely.geometry import LineString
+from shapely.geometry import LineString, MultiLineString
 from unittest.mock import MagicMock
 
 # Ensure src is in path
@@ -15,11 +15,11 @@ if str(SRC_ROOT) not in sys.path:
 
 from LRD_IR_spectrum.plotting.contour_sampling import (
     LineMergeStrategy,
-    extract_contour_lines,
-    merge_lines,
-    sample_along_single_line,
-    sample_points_on_contour,
+    get_contour_at_level,
     get_contour_line_intersections,
+    merge_lines,
+    sample_along_line,
+    sample_points_on_contour,
 )
 
 # ============= Fixtures =============
@@ -47,32 +47,43 @@ def mock_contour_set():
 
 # ============= Tests =============
 
-def test_extract_contour_lines(mock_contour_set):
+def test_get_contour_at_level(mock_contour_set):
     # Test valid extraction
-    lines = extract_contour_lines(mock_contour_set, 10.0)
-    assert len(lines) == 2
-    assert isinstance(lines[0], LineString)
-    assert lines[0].coords[:] == [(0, 0), (1, 1), (2, 2)]
+    contour = get_contour_at_level(mock_contour_set, 10.0)
+    assert isinstance(contour, MultiLineString)
+    assert len(contour.geoms) == 2
+    assert contour.geoms[0].coords[:] == [(0, 0), (1, 1), (2, 2)]
 
     # Test level not found
     with pytest.raises(ValueError, match="Level 99.0 不存在"):
-        extract_contour_lines(mock_contour_set, 99.0)
+        get_contour_at_level(mock_contour_set, 99.0)
 
     # Test empty level
     with pytest.raises(ValueError, match="没有合法路径"):
-        extract_contour_lines(mock_contour_set, 30.0)
+        get_contour_at_level(mock_contour_set, 30.0)
 
-def test_extract_contour_lines_rejects_filled(mock_contour_set):
+def test_get_contour_at_level_rejects_filled(mock_contour_set):
     mock_contour_set.filled = True
     with pytest.raises(ValueError, match=r"ContourSet 来自 contourf\(\)"):
-        extract_contour_lines(mock_contour_set, 10.0)
+        get_contour_at_level(mock_contour_set, 10.0)
 
-#TODO 为什么用 .coords 来检验？shapely 的对象支持直接比较 == ，是不是用 == 更好？
+# 使用 .coords[:] 而非 == 进行比较，因为我们需要精确的坐标顺序匹配，
+# 而 Shapely 的 == (equals) 只检查几何等价性。
 def test_merge_lines_longest():
     l1 = LineString([(0, 0), (1, 0)]) # Length 1
     l2 = LineString([(0, 0), (0, 10)]) # Length 10
     
     merged = merge_lines([l1, l2], LineMergeStrategy.LONGEST_ONLY)
+    assert merged.length == 10.0
+    assert merged.coords[:] == [(0, 0), (0, 10)]
+
+def test_merge_lines_accepts_multilinestring():
+    """merge_lines 应该同时支持 MultiLineString 和 Sequence[LineString]。"""
+    mls = MultiLineString([
+        [(0, 0), (1, 0)],   # Length 1
+        [(0, 0), (0, 10)],  # Length 10
+    ])
+    merged = merge_lines(mls, LineMergeStrategy.LONGEST_ONLY)
     assert merged.length == 10.0
     assert merged.coords[:] == [(0, 0), (0, 10)]
 
@@ -117,23 +128,38 @@ def test_merge_lines_nearest_allow_reverse_toggle():
     )
     assert merged_disallow.coords[:] == [(0, 0), (1, 0), (2, 0), (1, 0)]
 
-def test_sample_along_single_line():
+def test_sample_along_line():
     line = LineString([(0, 0), (10, 0)])
-    samples = sample_along_single_line(line, 11)
+    samples = sample_along_line(line, 11)
     assert samples.shape == (11, 2)
     assert samples[0].tolist() == [0.0, 0.0]
     assert samples[-1].tolist() == [10.0, 0.0]
     assert samples[5].tolist() == [5.0, 0.0] # Midpoint
 
-def test_sample_along_single_line_zero_length():
+def test_sample_along_line_zero_length():
     line = LineString([(1, 1), (1, 1)])
-    samples = sample_along_single_line(line, 3)
+    samples = sample_along_line(line, 3)
+    assert samples.shape == (3, 2)
     assert np.all(samples == np.array([[1.0, 1.0]] * 3))
 
-def test_sample_along_single_line_zero_samples():
+def test_sample_along_line_zero_samples():
     line = LineString([(0, 0), (1, 1)])
-    samples = sample_along_single_line(line, 0)
-    assert isinstance(samples, np.ndarray)
+    with pytest.raises(ValueError, match="num_samples 必须为正整数"):
+        sample_along_line(line, 0)
+
+def test_sample_along_line_multilinestring():
+    """MultiLineString 采样按总长度进行。"""
+    # 两条线段，各长 5，总长 10
+    mls = MultiLineString([
+        [(0, 0), (5, 0)],   # 长度 5
+        [(10, 0), (15, 0)], # 长度 5
+    ])
+    samples = sample_along_line(mls, 3)  # 0%, 50%, 100%
+    assert samples.shape == (3, 2)
+    # 0% -> (0, 0), 50% -> (5, 0) 第一段末端, 100% -> (15, 0)
+    np.testing.assert_allclose(samples[0], [0.0, 0.0])
+    np.testing.assert_allclose(samples[1], [5.0, 0.0])
+    np.testing.assert_allclose(samples[2], [15.0, 0.0])
 
 def test_sample_points_on_contour(mock_contour_set):
     # Level 20 has one line: (0, 10) -> (10, 10). Length 10.
@@ -146,6 +172,22 @@ def test_sample_points_on_contour(mock_contour_set):
     assert samples.shape == (3, 2)
     expected = np.array([[0, 10], [5, 10], [10, 10]])
     np.testing.assert_allclose(samples, expected)
+
+def test_sample_points_on_contour_no_merge(mock_contour_set):
+    """merge_strategy=None 时不合并，直接对 MultiLineString 采样。"""
+    # Level 10 has 2 segments: (0,0)->(2,2) and (3,3)->(4,4)
+    # 总长度: sqrt(8) + sqrt(2) ≈ 2.83 + 1.41 = 4.24
+    samples = sample_points_on_contour(
+        mock_contour_set,
+        target_level=10.0,
+        num_samples=3,
+        merge_strategy=None,
+    )
+    assert samples.shape == (3, 2)
+    # 第一个点应该在第一条线的起点
+    np.testing.assert_allclose(samples[0], [0.0, 0.0])
+    # 最后一个点应该在第二条线的终点
+    np.testing.assert_allclose(samples[-1], [4.0, 4.0])
 
 def test_get_contour_line_intersections(mock_contour_set):
     # Guide line: Vertical line at x=0.5

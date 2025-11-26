@@ -10,14 +10,25 @@ import numpy.typing as npt
 from matplotlib.contour import ContourSet
 from shapely.geometry import LineString, MultiLineString, MultiPoint, Point
 
-Array2D = npt.NDArray[np.float64]
+#: 表示 (N, 2) 形状的二维坐标点数组，每行为 [x, y]。
+CoordArray = npt.NDArray[np.float64]
 
 
 # ============= 核心功能 =============
 
-def extract_contour_lines(contour_set: ContourSet, target_level: float) -> list[LineString]:
-    """从 `ContourSet` 中抽取目标等值线对应的所有折线。"""
-
+def get_contour_at_level(contour_set: ContourSet, level: float) -> MultiLineString:
+    """从 ContourSet 中提取指定 level 的等值线。
+    
+    Args:
+        contour_set: matplotlib 的 ContourSet 对象（必须来自 contour() 而非 contourf()）。
+        level: 目标等值线的值。
+    
+    Returns:
+        该 level 的等值线（可能包含多条分离的曲线）。
+    
+    Raises:
+        ValueError: 如果 ContourSet 来自 contourf()，或 level 不存在，或该 level 没有合法路径。
+    """
     if getattr(contour_set, "filled", False):
         msg = "ContourSet 来自 contourf(); 仅支持 contour() 生成的线 contours"
         raise ValueError(msg)
@@ -25,12 +36,13 @@ def extract_contour_lines(contour_set: ContourSet, target_level: float) -> list[
     levels_list = list(contour_set.levels)
     
     try:
-        level_idx = levels_list.index(target_level)
+        level_idx = levels_list.index(level)
     except ValueError as exc:
-        msg = f"Level {target_level} 不存在; 可用 levels: {levels_list}"
+        msg = f"Level {level} 不存在; 可用 levels: {levels_list}"
         raise ValueError(msg) from exc
 
-    # 这里假定了 ContourSet 是 contour lines 而非 filled contour regions，所以 .levels 和 .allsegs 是等长的，应该不会越界
+    # 这里假定了 ContourSet 是 contour lines 而非 filled contour regions，
+    # 所以 .levels 和 .allsegs 是等长的，应该不会越界
     segments = contour_set.allsegs[level_idx]
 
     lines = [
@@ -39,12 +51,11 @@ def extract_contour_lines(contour_set: ContourSet, target_level: float) -> list[
         if seg.ndim == 2 and seg.shape[0] >= 2
     ]
 
-    # 对于某个 level 上没有路径的情况，lines 是空的
     if not lines:
-        msg = f"等值线 {target_level} 没有合法路径 (至少 2 个顶点)"
+        msg = f"等值线 {level} 没有合法路径 (至少 2 个顶点)"
         raise ValueError(msg)
 
-    return lines
+    return MultiLineString(lines)
 
 
 class LineMergeStrategy(Enum):
@@ -56,7 +67,7 @@ class LineMergeStrategy(Enum):
 
 
 def merge_lines(
-    lines: Sequence[LineString],
+    lines: MultiLineString | Sequence[LineString],
     strategy: LineMergeStrategy | str,
     *,
     allow_reverse: bool = True,
@@ -64,10 +75,13 @@ def merge_lines(
     """根据策略将多条 LineString 合并为一条 LineString。
 
     Args:
-        lines: 待合并的折线序列。
+        lines: 待合并的折线，可以是 MultiLineString 或 LineString 序列。
         strategy: 合并策略枚举或其字符串值。
         allow_reverse: 在最近邻策略中，是否允许为减少跳跃而反转候选折线。
     """
+    # 统一转为 list[LineString]
+    if isinstance(lines, MultiLineString):
+        lines = list(lines.geoms)
 
     if isinstance(strategy, str):
         strategy = LineMergeStrategy(strategy)
@@ -130,33 +144,59 @@ def merge_lines(
     raise ValueError(msg)
 
 
-#TODO: 支持 LineString | MultiLineString 作为输入。增加相应测试。考虑改名。
-def sample_along_single_line(line: LineString, num_samples: int) -> Array2D:
-    """在 LineString 上进行等距采样。"""
+def sample_along_line(
+    line: LineString | MultiLineString,
+    num_samples: int,
+) -> CoordArray:
+    """在 LineString 或 MultiLineString 上进行等距采样。
+    
+    对于 MultiLineString，采样按总长度进行（各段连续计算）。
+    
+    Args:
+        line: 待采样的线段或多线段。
+        num_samples: 采样点数量，必须为正整数。
+    
+    Returns:
+        shape 为 (num_samples, 2) 的坐标数组。
+    
+    Raises:
+        ValueError: 如果 num_samples <= 0。
+    """
+    if num_samples <= 0:
+        msg = f"num_samples 必须为正整数，得到 {num_samples}"
+        raise ValueError(msg)
     fractions = np.linspace(0.0, 1.0, num_samples)
     samples = line.interpolate(fractions, normalized=True)
     return np.array([[point.x, point.y] for point in samples])
-
 
 def sample_points_on_contour(
     contour_set: ContourSet,
     *,
     target_level: float,
     num_samples: int,
-    merge_strategy: LineMergeStrategy | str = LineMergeStrategy.LONGEST_ONLY,
+    merge_strategy: LineMergeStrategy | str | None = None,
     allow_reverse: bool = True,
-) -> Array2D:
+) -> CoordArray:
     """
     高层封装：返回指定等值线上的采样点坐标数组。
     
     1. 提取指定 level 的所有 segments
     2. 按策略合并为一条 LineString（可选是否允许反向连接）
     3. 等距采样
+    
+    Args:
+        merge_strategy: 合并策略。若为 None，则不合并，直接对所有线段
+            组成的 MultiLineString 按总长度进行采样。
     """
-
-    lines = extract_contour_lines(contour_set, target_level)
-    merged = merge_lines(lines, strategy=merge_strategy, allow_reverse=allow_reverse)
-    return sample_along_single_line(merged, num_samples)
+    contour = get_contour_at_level(contour_set, target_level)
+    
+    if merge_strategy is None:
+        # 不合并，直接对 MultiLineString 采样（按总长度）
+        target_line = contour
+    else:
+        target_line = merge_lines(contour, strategy=merge_strategy, allow_reverse=allow_reverse)
+    
+    return sample_along_line(target_line, num_samples)
 
 
 def get_contour_line_intersections(
@@ -179,15 +219,12 @@ def get_contour_line_intersections(
     
     for level in contour_set.levels:
         try:
-            lines = extract_contour_lines(contour_set, level)
+            contour = get_contour_at_level(contour_set, level)
         except ValueError:
             # 该 level 可能没有路径
             continue
-            
-        # 使用 MultiLineString 表示该 level 的所有等值线
-        contour_multiline = MultiLineString(lines)
         
-        intersection = contour_multiline.intersection(guide_line)
+        intersection = contour.intersection(guide_line)
         
         if intersection.is_empty:
             continue
@@ -210,10 +247,11 @@ def get_contour_line_intersections(
 
 
 __all__ = [
-    "extract_contour_lines",
+    "get_contour_at_level",
     "merge_lines",
-    "sample_along_single_line",
+    "sample_along_line",
     "sample_points_on_contour",
     "get_contour_line_intersections",
     "LineMergeStrategy",
+    "CoordArray",
 ]
