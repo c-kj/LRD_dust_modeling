@@ -8,6 +8,7 @@ from typing import Sequence
 import numpy as np
 import numpy.typing as npt
 from matplotlib.contour import ContourSet
+from shapely import line_merge, shortest_line
 from shapely.geometry import LineString, MultiLineString, MultiPoint, Point
 
 #: 表示 (N, 2) 形状的二维坐标点数组，每行为 [x, y]。
@@ -63,23 +64,58 @@ class LineMergeStrategy(Enum):
 
     LONGEST_ONLY = "longest"          # 只取最长路径
     DIRECT_CONCAT = "direct"          # 直接按顺序连接
-    NEAREST_NEIGHBOR = "nearest"      # 最近邻连接（贪心）
+    GREEDY = "greedy"                 # 从指定起点贪心连接最近邻
+    SHORTEST_GREEDY = "shortest_greedy"  # 枚举所有起点的贪心结果，取最短者（非全局最优）
+
+
+def _extract_endpoints(line: LineString) -> MultiPoint:
+    """提取 LineString 的首尾端点，作为 MultiPoint 返回。
+    这里不使用 line.boundary，因为对于闭合线段，boundary 是空的。而这个函数想确保总是返回两个点组成的 MultiPoint
+    """
+    return MultiPoint([line.coords[0], line.coords[-1]])
+
+
+def _greedy_merge(lines: Sequence[LineString], start_index: int = 0) -> LineString:
+    """从指定线段开始，贪心地连接最近的下一条线段。
+
+    每次选择 remaining 中与 merged 端点距离最近的线段，用 line_merge 合并。
+
+    Args:
+        lines: 待合并的线段列表。
+        start_index: 起始线段的索引。
+
+    Returns:
+        合并后的 LineString。
+    """
+    remaining = list(lines)
+    merged = remaining.pop(start_index)
+
+    while remaining:
+        merged_endpoints: MultiPoint = _extract_endpoints(merged)  # merged 的首尾点。不应该用 boundary 因为有可能是闭合的
+        bridge_list: list[LineString] = [shortest_line(merged_endpoints, _extract_endpoints(line)) for line in remaining]
+        shortest_bridge_idx = np.argmin([bridge.length for bridge in bridge_list])
+        bridge: LineString = bridge_list[shortest_bridge_idx]
+        next_line: LineString = remaining.pop(shortest_bridge_idx)
+        # line_merge 如果有的 LineString 无共享端点，会返回 MultiLineString。那么下一次循环就会出错（没有 .coords 属性）。但这里的算法应该保证了总是有共享端点。
+        merged = line_merge(MultiLineString([merged, bridge, next_line])) 
+
+    return merged
 
 
 def merge_lines(
     lines: MultiLineString | Sequence[LineString],
     strategy: LineMergeStrategy | str,
     *,
-    allow_reverse: bool = True,
+    start_index: int = 0,
 ) -> LineString:
     """根据策略将多条 LineString 合并为一条 LineString。
 
     Args:
         lines: 待合并的折线，可以是 MultiLineString 或 LineString 序列。
         strategy: 合并策略枚举或其字符串值。
-        allow_reverse: 在最近邻策略中，是否允许为减少跳跃而反转候选折线。
+        start_index: 仅用于 GREEDY 策略，指定从哪条线开始（默认为 0）。
     """
-    # 统一转为 list[LineString]
+    # 统一转为 Sequence[LineString]
     if isinstance(lines, MultiLineString):
         lines = list(lines.geoms)
 
@@ -87,7 +123,7 @@ def merge_lines(
         strategy = LineMergeStrategy(strategy)
 
     if not lines:
-        msg = "至少需要一条路径才能合并"
+        msg = "lines 不能为空"
         raise ValueError(msg)
 
     if len(lines) == 1:
@@ -96,52 +132,21 @@ def merge_lines(
     if strategy is LineMergeStrategy.LONGEST_ONLY:
         return max(lines, key=lambda line: line.length)
 
-    if strategy is LineMergeStrategy.DIRECT_CONCAT:
-        # 直接拼接坐标数组
+    elif strategy is LineMergeStrategy.DIRECT_CONCAT:
         coords = np.vstack([np.array(line.coords) for line in lines])
         return LineString(coords)
 
-    #BUG 这里的算法好像有问题，不如预期，有待检查
-    if strategy is LineMergeStrategy.NEAREST_NEIGHBOR:
-        # 贪心策略：从最长的路径开始，每次拼接最近的下一条
-        remaining = sorted(list(lines), key=lambda line: line.length, reverse=True)
-        merged_coords = list(remaining.pop(0).coords)
+    elif strategy is LineMergeStrategy.GREEDY:
+        return _greedy_merge(lines, start_index=start_index)
 
-        while remaining:
-            tail_point = Point(merged_coords[-1])
-            best_idx = -1
-            min_dist = float("inf")
-            best_should_reverse = False
+    elif strategy is LineMergeStrategy.SHORTEST_GREEDY:
+        # 枚举所有起点的贪心结果，取最短者。注意：这不保证全局最优。
+        greedy_merge_results = (_greedy_merge(lines, start_index=idx) for idx in range(len(lines)))
+        return min(greedy_merge_results, key=lambda line: line.length)
 
-            for idx, candidate in enumerate(remaining):
-                head_point = Point(candidate.coords[0])
-                tail_candidate_point = Point(candidate.coords[-1])
-
-                head_dist = tail_point.distance(head_point)
-                candidate_dist = head_dist
-                should_reverse = False
-
-                if allow_reverse:
-                    tail_dist = tail_point.distance(tail_candidate_point)
-                    if tail_dist < candidate_dist:
-                        candidate_dist = tail_dist
-                        should_reverse = True
-
-                if candidate_dist < min_dist:
-                    min_dist = candidate_dist
-                    best_idx = idx
-                    best_should_reverse = should_reverse
-
-            next_line = remaining.pop(best_idx)
-            coords = list(next_line.coords)
-            if allow_reverse and best_should_reverse:
-                coords = list(reversed(coords))
-            merged_coords.extend(coords)
-
-        return LineString(merged_coords)
-
-    msg = f"未知的合并策略: {strategy}"
-    raise ValueError(msg)
+    else:
+        msg = f"未知的合并策略: {strategy}"
+        raise ValueError(msg)
 
 
 def sample_along_line(
@@ -175,18 +180,16 @@ def sample_points_on_contour(
     target_level: float,
     num_samples: int,
     merge_strategy: LineMergeStrategy | str | None = None,
-    allow_reverse: bool = True,
 ) -> CoordArray:
     """
     高层封装：返回指定等值线上的采样点坐标数组。
     
     1. 提取指定 level 的所有 segments
-    2. 按策略合并为一条 LineString（可选是否允许反向连接）
+    2. 按策略合并为一条 LineString，如果策略为 None 则不合并
     3. 等距采样
     
     Args:
-        merge_strategy: 合并策略。若为 None，则不合并，直接对所有线段
-            组成的 MultiLineString 按总长度进行采样。
+        merge_strategy: 合并策略。若为 None，则不合并，直接对所有线段组成的 MultiLineString 按总长度进行采样。
     """
     contour = get_contour_at_level(contour_set, target_level)
     
@@ -194,7 +197,7 @@ def sample_points_on_contour(
         # 不合并，直接对 MultiLineString 采样（按总长度）
         target_line = contour
     else:
-        target_line = merge_lines(contour, strategy=merge_strategy, allow_reverse=allow_reverse)
+        target_line = merge_lines(contour, strategy=merge_strategy)
     
     return sample_along_line(target_line, num_samples)
 

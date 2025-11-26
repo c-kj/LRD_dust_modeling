@@ -93,36 +93,67 @@ def test_merge_lines_direct():
     # Should be (0,0)->(1,1)->(2,2)->(3,3)
     assert merged == LineString([(0, 0), (1, 1), (2, 2), (3, 3)])
 
-def test_merge_lines_nearest():
-    # l1: (0,0) -> (1,0)
-    # l2: (2,0) -> (3,0)
-    # l3: (10,0) -> (11,0)
-    # Start with l1. Nearest to (1,0) is l2's (2,0) [dist=1]. l3 is far [dist=9].
+def test_merge_lines_greedy():
+    """GREEDY 策略从 lines[0] 开始，贪心选择最近的下一条。"""
     l1 = LineString([(0, 0), (1, 0)])
     l2 = LineString([(2, 0), (3, 0)])
     l3 = LineString([(10, 0), (11, 0)])
     
-    merged = merge_lines([l1, l3, l2], LineMergeStrategy.NEAREST_NEIGHBOR)
-    # Expected order: l1 -> l2 -> l3
+    # 从 l1 开始，最近的是 l2，然后是 l3
+    merged = merge_lines([l1, l3, l2], LineMergeStrategy.GREEDY)
     assert merged == LineString([(0, 0), (1, 0), (2, 0), (3, 0), (10, 0), (11, 0)])
 
-def test_merge_lines_nearest_allow_reverse_toggle():
+def test_merge_lines_greedy_with_start_index():
+    """GREEDY 策略可通过 start_index 指定起点。"""
     l1 = LineString([(0, 0), (1, 0)])
-    l2 = LineString([(2, 0), (1, 0)])  # 方向与期望相反
+    l2 = LineString([(2, 0), (3, 0)])
+    
+    # 从 l2 (index=1) 开始，结果包含所有点
+    merged = merge_lines([l1, l2], LineMergeStrategy.GREEDY, start_index=1)
+    # line_merge 会自动处理方向，结果方向不确定，但应包含所有坐标
+    assert set(merged.coords) == {(0, 0), (1, 0), (2, 0), (3, 0)}
+    assert merged.length == 3.0  # 总长度 = 1 + 1 + 1
 
-    merged_allow = merge_lines(
-        [l1, l2],
-        LineMergeStrategy.NEAREST_NEIGHBOR,
-        allow_reverse=True,
-    )
-    assert merged_allow == LineString([(0, 0), (1, 0), (1, 0), (2, 0)])
+def test_merge_lines_greedy_auto_reverse():
+    """GREEDY 策略自动处理方向并合并共享端点。"""
+    l1 = LineString([(0, 0), (1, 0)])
+    l2 = LineString([(2, 0), (1, 0)])  # 尾端与 l1 尾端相邻
 
-    merged_disallow = merge_lines(
-        [l1, l2],
-        LineMergeStrategy.NEAREST_NEIGHBOR,
-        allow_reverse=False,
-    )
-    assert merged_disallow == LineString([(0, 0), (1, 0), (2, 0), (1, 0)])
+    merged = merge_lines([l1, l2], LineMergeStrategy.GREEDY)
+    # line_merge 会自动反转 l2 并合并共享端点 (1,0)
+    assert merged == LineString([(0, 0), (1, 0), (2, 0)])
+
+def test_merge_lines_shortest_greedy():
+    """SHORTEST_GREEDY 策略应比单一起点 GREEDY 找到更短的总长度。
+    
+    注意：这是多起点贪心，不保证全局最优。
+    
+    构造一个 GREEDY 会"走错路"的例子：
+    
+        l3 (远)
+        |
+        l1 -- l2 (近但方向错)
+    
+    l1: (0,0) -> (1,0)
+    l2: (0.9,0) -> (0.9,-1)   # 头端离 l1 尾端近 (0.1)，但会把路径带向 -y 方向
+    l3: (2,0) -> (3,0)        # 离 l1 尾端远 (1.0)，但在 +x 方向
+    
+    GREEDY 从 l1: 选 l2 (距离 0.1) -> 然后到 l3 需要跳很远
+    更优: l1 -> l3 -> l2
+    """
+    l1 = LineString([(0, 0), (1, 0)])
+    l2 = LineString([(0.9, 0), (0.9, -1)])   # 近但会带偏
+    l3 = LineString([(2, 0), (3, 0)])
+
+    greedy_result = merge_lines([l1, l2, l3], LineMergeStrategy.GREEDY)
+    shortest_result = merge_lines([l1, l2, l3], LineMergeStrategy.SHORTEST_GREEDY)
+    
+    # SHORTEST_GREEDY 应该找到更短（或相等）的结果
+    assert shortest_result.length <= greedy_result.length
+    
+    # 验证确实包含所有原始线段的点
+    all_original_coords = {(0, 0), (1, 0), (0.9, 0), (0.9, -1), (2, 0), (3, 0)}
+    assert set(shortest_result.coords).issuperset(all_original_coords)
 
 def test_sample_along_line():
     line = LineString([(0, 0), (10, 0)])
