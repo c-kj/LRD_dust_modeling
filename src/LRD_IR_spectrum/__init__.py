@@ -1,3 +1,5 @@
+# ruff: noqa: F401, F403  # 忽略未使用的导入警告，因为这是一个专门用于导入的模块
+
 from .opacity import OpacityData
 from .incident_SED import SED, get_SED_detection
 from .model_base import R_out_Error, LRD_IR_ModelBase

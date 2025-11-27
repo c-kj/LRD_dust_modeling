@@ -7,17 +7,18 @@ import pytest
 from shapely.geometry import LineString, MultiLineString
 from unittest.mock import MagicMock
 
+#TODO 是否有更好的方式处理 src 路径问题？
 # Ensure src is in path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from LRD_IR_spectrum.plotting.contour_sampling import (
-    LineMergeStrategy,
+from LRD_IR_spectrum.plotting.contour_utils import (
+    LineConnectStrategy,
     get_contour_at_level,
     get_contour_line_intersections,
-    merge_lines,
+    connect_lines,
     sample_along_line,
     sample_points_on_contour,
 )
@@ -67,63 +68,63 @@ def test_get_contour_at_level_rejects_filled(mock_contour_set):
     with pytest.raises(ValueError, match=r"ContourSet 来自 contourf\(\)"):
         get_contour_at_level(mock_contour_set, 10.0)
 
-def test_merge_lines_longest():
+def test_connect_lines_longest():
     l1 = LineString([(0, 0), (1, 0)]) # Length 1
     l2 = LineString([(0, 0), (0, 10)]) # Length 10
     
-    merged = merge_lines([l1, l2], LineMergeStrategy.LONGEST_ONLY)
-    assert merged.length == 10.0
-    assert merged == LineString([(0, 0), (0, 10)])
+    connected = connect_lines([l1, l2], LineConnectStrategy.LONGEST_ONLY)
+    assert connected.length == 10.0
+    assert connected == LineString([(0, 0), (0, 10)])
 
-def test_merge_lines_accepts_multilinestring():
-    """merge_lines 应该同时支持 MultiLineString 和 Sequence[LineString]。"""
+def test_connect_lines_accepts_multilinestring():
+    """connect_lines 应该同时支持 MultiLineString 和 Sequence[LineString]。"""
     mls = MultiLineString([
         [(0, 0), (1, 0)],   # Length 1
         [(0, 0), (0, 10)],  # Length 10
     ])
-    merged = merge_lines(mls, LineMergeStrategy.LONGEST_ONLY)
-    assert merged.length == 10.0
-    assert merged == LineString([(0, 0), (0, 10)])
+    connected = connect_lines(mls, LineConnectStrategy.LONGEST_ONLY)
+    assert connected.length == 10.0
+    assert connected == LineString([(0, 0), (0, 10)])
 
-def test_merge_lines_direct():
+def test_connect_lines_direct():
     l1 = LineString([(0, 0), (1, 1)])
     l2 = LineString([(2, 2), (3, 3)])
     
-    merged = merge_lines([l1, l2], LineMergeStrategy.DIRECT_CONCAT)
+    connected = connect_lines([l1, l2], LineConnectStrategy.DIRECT_CONCAT)
     # Should be (0,0)->(1,1)->(2,2)->(3,3)
-    assert merged == LineString([(0, 0), (1, 1), (2, 2), (3, 3)])
+    assert connected == LineString([(0, 0), (1, 1), (2, 2), (3, 3)])
 
-def test_merge_lines_greedy():
+def test_connect_lines_greedy():
     """GREEDY 策略从 lines[0] 开始，贪心选择最近的下一条。"""
     l1 = LineString([(0, 0), (1, 0)])
     l2 = LineString([(2, 0), (3, 0)])
     l3 = LineString([(10, 0), (11, 0)])
     
     # 从 l1 开始，最近的是 l2，然后是 l3
-    merged = merge_lines([l1, l3, l2], LineMergeStrategy.GREEDY)
-    assert merged == LineString([(0, 0), (1, 0), (2, 0), (3, 0), (10, 0), (11, 0)])
+    connected = connect_lines([l1, l3, l2], LineConnectStrategy.GREEDY)
+    assert connected == LineString([(0, 0), (1, 0), (2, 0), (3, 0), (10, 0), (11, 0)])
 
-def test_merge_lines_greedy_with_start_index():
+def test_connect_lines_greedy_with_start_index():
     """GREEDY 策略可通过 start_index 指定起点。"""
     l1 = LineString([(0, 0), (1, 0)])
     l2 = LineString([(2, 0), (3, 0)])
     
     # 从 l2 (index=1) 开始，结果包含所有点
-    merged = merge_lines([l1, l2], LineMergeStrategy.GREEDY, start_index=1)
+    connected = connect_lines([l1, l2], LineConnectStrategy.GREEDY, start_index=1)
     # line_merge 会自动处理方向，结果方向不确定，但应包含所有坐标
-    assert set(merged.coords) == {(0, 0), (1, 0), (2, 0), (3, 0)}
-    assert merged.length == 3.0  # 总长度 = 1 + 1 + 1
+    assert set(connected.coords) == {(0, 0), (1, 0), (2, 0), (3, 0)}
+    assert connected.length == 3.0  # 总长度 = 1 + 1 + 1
 
-def test_merge_lines_greedy_auto_reverse():
+def test_connect_lines_greedy_auto_reverse():
     """GREEDY 策略自动处理方向并合并共享端点。"""
     l1 = LineString([(0, 0), (1, 0)])
     l2 = LineString([(2, 0), (1, 0)])  # 尾端与 l1 尾端相邻
 
-    merged = merge_lines([l1, l2], LineMergeStrategy.GREEDY)
+    connected = connect_lines([l1, l2], LineConnectStrategy.GREEDY)
     # line_merge 会自动反转 l2 并合并共享端点 (1,0)
-    assert merged == LineString([(0, 0), (1, 0), (2, 0)])
+    assert connected == LineString([(0, 0), (1, 0), (2, 0)])
 
-def test_merge_lines_shortest_greedy():
+def test_connect_lines_shortest_greedy():
     """SHORTEST_GREEDY 策略应比单一起点 GREEDY 找到更短的总长度。
     
     注意：这是多起点贪心，不保证全局最优。
@@ -145,8 +146,8 @@ def test_merge_lines_shortest_greedy():
     l2 = LineString([(0.9, 0), (0.9, -1)])   # 近但会带偏
     l3 = LineString([(2, 0), (3, 0)])
 
-    greedy_result = merge_lines([l1, l2, l3], LineMergeStrategy.GREEDY)
-    shortest_result = merge_lines([l1, l2, l3], LineMergeStrategy.SHORTEST_GREEDY)
+    greedy_result = connect_lines([l1, l2, l3], LineConnectStrategy.GREEDY)
+    shortest_result = connect_lines([l1, l2, l3], LineConnectStrategy.SHORTEST_GREEDY)
     
     # SHORTEST_GREEDY 应该找到更短（或相等）的结果
     assert shortest_result.length <= greedy_result.length
@@ -194,21 +195,21 @@ def test_sample_points_on_contour(mock_contour_set):
         mock_contour_set, 
         target_level=20.0, 
         num_samples=3,
-        merge_strategy='longest'
+        connect_strategy='longest'
     )
     assert samples.shape == (3, 2)
     expected = np.array([[0, 10], [5, 10], [10, 10]])
     np.testing.assert_allclose(samples, expected)
 
-def test_sample_points_on_contour_no_merge(mock_contour_set):
-    """merge_strategy=None 时不合并，直接对 MultiLineString 采样。"""
+def test_sample_points_on_contour_no_connect(mock_contour_set):
+    """connect_strategy=None 时不连接，直接对 MultiLineString 采样。"""
     # Level 10 has 2 segments: (0,0)->(2,2) and (3,3)->(4,4)
     # 总长度: sqrt(8) + sqrt(2) ≈ 2.83 + 1.41 = 4.24
     samples = sample_points_on_contour(
         mock_contour_set,
         target_level=10.0,
         num_samples=3,
-        merge_strategy=None,
+        connect_strategy=None,
     )
     assert samples.shape == (3, 2)
     # 第一个点应该在第一条线的起点

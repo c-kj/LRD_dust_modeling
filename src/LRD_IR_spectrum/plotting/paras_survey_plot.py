@@ -15,7 +15,7 @@ from shapely import LineString
 
 from ..A_V_limits import Constraint
 from ..utils import quantity_to_latex
-from .contour_sampling import get_contour_line_intersections
+from .contour_utils import get_contour_line_intersections
 
 
 class ParasSurveyPlot: 
