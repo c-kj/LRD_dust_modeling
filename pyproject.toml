@@ -1,0 +1,34 @@
+[project]
+name = "LRD_IR_spectrum"
+version = "0.3.0"
+description = "LRD dust modeling and IR spectrum analysis"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    # Core calculation
+    "astropy",
+    "numpy",
+    "scipy",
+    "dust_extinction",
+    # parallelization
+    "joblib",
+    "tqdm",
+    # plotting
+    "matplotlib",
+    "seaborn",
+    "scienceplots",
+    "shapely",
+    # notebook support
+    "ipykernel",
+    "ipympl",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

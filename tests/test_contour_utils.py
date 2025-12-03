@@ -9,10 +9,10 @@ from unittest.mock import MagicMock
 
 #TODO 是否有更好的方式处理 src 路径问题？
 # Ensure src is in path
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_ROOT = PROJECT_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+# PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# SRC_ROOT = PROJECT_ROOT / "src"
+# if str(SRC_ROOT) not in sys.path:
+#     sys.path.insert(0, str(SRC_ROOT))
 
 from LRD_IR_spectrum.plotting.contour_utils import (
     LineConnectStrategy,
